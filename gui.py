@@ -10,40 +10,77 @@ logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 LOG = logging.getLogger()
 
 
-def generate_sudoku(spinboxes):
-    LOG.debug("Trying to generate new sudoku")
-    sudoku = get_sudoku()
-    unsolved = sum(sudoku["u"], [])
-    LOG.debug("Got unsolved sudoku with %d elements" % len(unsolved))
-    for i, sb in enumerate(spinboxes):
-        # Fix values that are not zero
-        if unsolved[i]:
-            sb.config(values=(unsolved[i],), fg="green")
-        else:
-            sb.config(values=[v for v in range(10)], fg="black")
-    LOG.debug("New sudoku was generated")
+class SudokuFrame(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
 
-    tkMessageBox.showinfo("Info", "New sudoku was generated")
+        # Set validator for boxes
+        vcmd = (self.register(self.validate_entry), '%P')
+
+        # Create trackers for sudoku boxes
+        self.box_values = [tk.StringVar() for i in range(81)]
+        for sv in self.box_values:
+            sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv))
+
+        # Generate a list of boxes
+        self.boxes = [tk.Entry(self,
+                               width=2,
+                               font=100,
+                               justify='center',
+                               textvariable=sv,
+                               validate='key',
+                               validatecommand=vcmd,
+                               state='readonly') for sv in self.box_values]
+
+        # Fill the grid
+        for i, b in enumerate(self.boxes):
+            r = i // 9
+            c = i % 9
+            b.grid(row=r, column=c, padx=3, pady=3)
+
+    def validate_entry(self, value):
+        allowed = (len(value) == 1 and value.isalnum()) or not value
+        LOG.debug("Validate %s: %s" % (value, allowed))
+        if not allowed:
+            self.bell()
+        return allowed
+
+    def report_changes(self, sv):
+        LOG.debug("Value %s has changed" % sv)
+        return self.get_current_state()
+
+    def get_current_state(self):
+        cs = [b.get() if b.get() else 0 for b in self.boxes]
+        LOG.debug("Get current state: %s" % cs)
+        return cs
+
+    def generate_sudoku(self):
+        LOG.debug("Trying to generate new sudoku")
+        sudoku = get_sudoku()
+        unsolved = sum(sudoku["u"], [])
+        LOG.debug("Got unsolved sudoku with %d elements" % len(unsolved))
+        for i, b in enumerate(self.boxes):
+            # Fix values that are not zero
+            b.config(state="normal")
+            b.delete(0, 'end')
+            if unsolved[i]:
+                b.insert(0, unsolved[i])
+                b.config(state="readonly")
+
+        LOG.debug("New sudoku was generated")
+
+        # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
 root = tk.Tk()
-frame_sudoku = tk.Frame(root)
+frame_sudoku = SudokuFrame(root)
 frame_sudoku.pack(side=tk.TOP)
 
-# Generate a list of spinboxes
-spinboxes = [tk.Spinbox(frame_sudoku, from_=0, to=9, width=1, font=100) for i in range(81)]
-
-# Fill sudoku grid
-for i, s in enumerate(spinboxes):
-    r = i // 9
-    c = i % 9
-    s.grid(row=r, column=c, padx=3, pady=3)
-
-# Preserve function
-generate_sudoku_sp = partial(generate_sudoku, spinboxes)
 
 # Create button
-btn_new_sudoku = tk.Button(root, text="Generate", command=generate_sudoku_sp)
+gen = partial(SudokuFrame.generate_sudoku, frame_sudoku)
+btn_new_sudoku = tk.Button(root, text="Generate", command=gen)
 btn_new_sudoku.pack(side=tk.BOTTOM)
+
 
 root.mainloop()
