@@ -71,16 +71,49 @@ class SudokuFrame(tk.Frame):
 
         # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
-
+# Root frame
 root = tk.Tk()
-frame_sudoku = SudokuFrame(root)
+root.resizable(width=False, height=False)
+
+# Main pane
+main_pane = tk.PanedWindow(root, showhandle=False)
+main_pane.pack(fill=tk.BOTH, expand=True)
+
+# Menu frame for buttons
+menu_frame = tk.Frame()
+main_pane.add(menu_frame)
+title = tk.Label(menu_frame, text="Multiplayer sudoku\nv.0.0.1", font=100)
+title.pack(side=tk.TOP)
+
+# Sudoku pane
+sudoku_pane = tk.PanedWindow(main_pane, relief=tk.RAISED)
+sudoku_pane.pack(fill=tk.NONE)
+main_pane.add(sudoku_pane)
+
+frame_sudoku = SudokuFrame(sudoku_pane)
 frame_sudoku.pack(side=tk.TOP)
 
+# Create username
+frm_uname = tk.Frame(menu_frame)
+frm_uname.pack(side=tk.BOTTOM)
+lbl_uname = tk.Label(frm_uname, text="User Name")
+lbl_uname.pack(side=tk.LEFT)
+ent_uname = tk.Entry(frm_uname, bd=5)
+ent_uname.pack(side=tk.RIGHT)
 
-# Create button
-gen = partial(SudokuFrame.generate_sudoku, frame_sudoku)
-btn_new_sudoku = tk.Button(root, text="Generate", command=gen)
+# Create menu buttons
+btn_width = 30
+btn_new_sudoku = tk.Button(menu_frame,
+                           text="New sudoku",
+                           width=btn_width,
+                           command=partial(SudokuFrame.generate_sudoku, frame_sudoku))
 btn_new_sudoku.pack(side=tk.BOTTOM)
+
+btn_connect = tk.Button(menu_frame,
+                        width=btn_width,
+                        text="Connect")
+btn_connect.pack(side=tk.BOTTOM)
+
 
 
 root.mainloop()
