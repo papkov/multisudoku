@@ -1,10 +1,10 @@
 import Tkinter as tk
+import tkFont
 import tkMessageBox
 import logging
 from functools import partial
 import re
-
-from sudoku import *
+import sudoku as su
 
 FORMAT = '%(asctime)-15s %(levelname)s %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -22,8 +22,8 @@ class SudokuFrame(tk.Frame):
 
         # Generate a list of boxes
         self.boxes = [tk.Entry(self,
-                               width=2,
-                               font=100,
+                               width=3,
+                               font="Helvetica 24",
                                justify='center',
                                textvariable=sv,
                                validate='key',
@@ -34,7 +34,7 @@ class SudokuFrame(tk.Frame):
         for i, b in enumerate(self.boxes):
             r = i // 9
             c = i % 9
-            b.grid(row=r, column=c, padx=3, pady=3)
+            b.grid(row=r, column=c, ipadx=0, padx=3, ipady=4, pady=4)
 
     def validate_entry(self, value):
         allowed = (len(value) == 1 and value.isalnum()) or not value
@@ -63,7 +63,7 @@ class SudokuFrame(tk.Frame):
                                           "spaces not allowed)")
             return
 
-        sudoku = get_sudoku()
+        sudoku = su.get_sudoku()
         unsolved = sum(sudoku["u"], [])
         LOG.debug("Got unsolved sudoku with %d elements" % len(unsolved))
         for i, b in enumerate(self.boxes):
@@ -79,10 +79,64 @@ class SudokuFrame(tk.Frame):
         # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
+class LeaderboardFrame(tk.Frame):
+    def __init__(self, parent, players_limit=8):
+        tk.Frame.__init__(self, parent)
+        self.title = tk.Label(self,
+                              text="Leaderboard",
+                              height=1,
+                              font="Helvetica 12 bold")
+        self.players_limit = players_limit
+
+        # Create string vars for every player with names and point
+        self.sv_players = [tk.StringVar() for i in range(self.players_limit)]
+        self.sv_points = [tk.StringVar() for i in range(self.players_limit)]
+
+        # Create labels for static representation
+        self.lbl_players = [tk.Label(self,
+                                     width=8,
+                                     textvariable=sv,
+                                     justify="left",
+                                     font="Courier 10") for sv in self.sv_players]
+        self.lbl_points = [tk.Label(self,
+                                    width=8,
+                                    textvariable=sv,
+                                    justify="left",
+                                    font="Courier 10") for sv in self.sv_points]
+
+        # Fill the leaderboard table grid
+        self.title.grid(row=0,
+                        column=0,
+                        columnspan=2)
+
+        for i in range(self.players_limit):
+            self.lbl_players[i].grid(row=i+1,
+                                     column=0,
+                                     padx=2,
+                                     pady=0,
+                                     sticky="e")
+
+            self.lbl_points[i].grid(row=i+1,
+                                    column=1,
+                                    padx=2,
+                                    pady=0,
+                                    sticky="w")
+
+    def fill(self, table):
+        """
+        Fill leaderboard with data from server
+        :param table: dict, player: points
+        :return: None
+        """
+        for i, player in enumerate(table):
+            self.sv_players[i].set(player)
+            self.sv_points[i].set(table[player])
+
+
 class MenuFrame(tk.Frame):
     def __init__(self, parent, frm_sudoku, width=25):
         tk.Frame.__init__(self, parent)
-        self.title = tk.Label(self, text="Multiplayer sudoku\nv.0.0.1", font=100)
+        self.title = tk.Label(self, text="Multiplayer sudoku\nv0.0.1", font="Helvetica 16 bold")
         self.title.pack(side=tk.TOP)
 
         # Create username frame with label and textfield
@@ -91,7 +145,8 @@ class MenuFrame(tk.Frame):
 
         # Label
         self.lbl_username = tk.Label(self.frm_username,
-                                     text="username")
+                                     text="Username: ",
+                                     font="Helvetica 12")
         self.lbl_username.pack(side=tk.LEFT)
 
         # Test entry
@@ -110,13 +165,21 @@ class MenuFrame(tk.Frame):
         self.btn_new = tk.Button(self,
                                  text="New game",
                                  width=width,
+                                 font="Helvetica 12",
                                  command=self.vcmd_username)
-        self.btn_new.pack(side=tk.BOTTOM)
 
         self.btn_connect = tk.Button(self,
                                      width=width,
-                                     text="Connect")
+                                     text="Connect",
+                                     font="Helvetica 12",
+                                     command=self.connect)
+
+        self.frm_leaderboard = LeaderboardFrame(self)
+
+        # Organise objects
+        self.btn_new.pack(side=tk.BOTTOM)
         self.btn_connect.pack(side=tk.BOTTOM)
+        self.frm_leaderboard.pack(side=tk.TOP)
 
     def validate_username(self, username):
         p = re.compile('^[0-9A-Za-z]{1,8}$')
@@ -131,6 +194,9 @@ class MenuFrame(tk.Frame):
             self.btn_new.config(command=self.vcmd_username)
             LOG.debug("Valid username [%s], status %s" % (username, self.valid_username))
         return True
+
+    def connect(self):
+        self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
 
 
 class MainWindow(tk.Tk):
@@ -159,6 +225,7 @@ class MainWindow(tk.Tk):
 
 
 if __name__ == "__main__":
-    root = MainWindow()
-    root.mainloop()
+    LOG.error("This file was not designed to run standalone")
+    exit(0)
+
 
