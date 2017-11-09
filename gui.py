@@ -79,7 +79,6 @@ class SudokuFrame(tk.Frame):
         # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
-# Menu frame for buttons
 class MenuFrame(tk.Frame):
     def __init__(self, parent, frm_sudoku, width=25):
         tk.Frame.__init__(self, parent)
@@ -134,52 +133,32 @@ class MenuFrame(tk.Frame):
         return True
 
 
-# Create frames
-root = tk.Tk()
-root.resizable(width=False, height=False)
+class MainWindow(tk.Tk):
+    def __init__(self):
+        tk.Tk.__init__(self)
+        # Set window properties
+        self.title("multisudoku")
+        self.resizable(width=False, height=False)
 
-# Main pane
-pn_main = tk.PanedWindow(root, showhandle=False)
-pn_main.pack(fill=tk.BOTH, expand=True)
+        # Main pane
+        self.pn_main = tk.PanedWindow(self, showhandle=False)
+        self.pn_main.pack(fill=tk.BOTH, expand=True)
 
-# Sudoku pane
-pn_sudoku = tk.PanedWindow(pn_main, relief=tk.RAISED)
-pn_sudoku.pack(fill=tk.NONE)
-frm_sudoku = SudokuFrame(pn_sudoku)
-frm_sudoku.pack(side=tk.TOP)
+        # Sudoku pane
+        self.pn_sudoku = tk.PanedWindow(self.pn_main, relief=tk.RAISED)
+        self.pn_sudoku.pack(fill=tk.NONE)
+        self.frm_sudoku = SudokuFrame(self.pn_sudoku)
+        self.frm_sudoku.pack(side=tk.TOP)
 
-# Create menu frame and bound it with sudoku
-frm_menu = MenuFrame(pn_main, frm_sudoku)
+        # Create menu frame and bound it with sudoku
+        self.frm_menu = MenuFrame(self.pn_main, self.frm_sudoku)
 
-# Add panes to main pane
-pn_main.add(frm_menu)
-pn_main.add(pn_sudoku)
-# title = tk.Label(menu_frame, text="Multiplayer sudoku\nv.0.0.1", font=100)
-# title.pack(side=tk.TOP)
-
-
-
-# Create username
-# frm_uname = tk.Frame(menu_frame)
-# frm_uname.pack(side=tk.BOTTOM)
-# lbl_uname = tk.Label(frm_uname, text="User Name")
-# lbl_uname.pack(side=tk.LEFT)
-# ent_uname = tk.Entry(frm_uname, bd=5)
-# ent_uname.pack(side=tk.RIGHT)
-#
-# # Create menu buttons
-# btn_width = 30
-# btn_new_sudoku = tk.Button(menu_frame,
-#                            text="New sudoku",
-#                            width=btn_width,
-#                            command=partial(SudokuFrame.generate_sudoku, frame_sudoku))
-# btn_new_sudoku.pack(side=tk.BOTTOM)
-#
-# btn_connect = tk.Button(menu_frame,
-#                         width=btn_width,
-#                         text="Connect")
-# btn_connect.pack(side=tk.BOTTOM)
+        # Add panes to main pane
+        self.pn_main.add(self.frm_menu)
+        self.pn_main.add(self.pn_sudoku)
 
 
+if __name__ == "__main__":
+    root = MainWindow()
+    root.mainloop()
 
-root.mainloop()
