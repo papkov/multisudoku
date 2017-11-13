@@ -1,3 +1,5 @@
+import pickle
+from base64 import decodestring, encodestring
 # Requests --------------------------------------------------------------------
 REQ_GM_GET_STATE = 'A'
 REQ_GM_GUESS = 'B'
@@ -10,7 +12,7 @@ CTR_MSGS = { REQ_GM_GET_STATE:'Get the current state of the guessed word',
 # Responses--------------------------------------------------------------------
 RSP_GM_STATE = 'a'
 RSP_GM_GUESS = 'b'
-RSP_GM_SET_SUD = 'c'
+RSP_GM_SET_SUDOKU = 'c'
 RSP_GM_SET_NAME = 'd'
 RSP_GM_NOT_JOINED = 'x'
 RSP_UNKNCONTROL = '4'
@@ -23,3 +25,13 @@ MSG_FIELD_SEP = ':'
 MSG_SEP = ';'
 
 DEFAULT_RCV_BUFSIZE = 1
+
+
+def serialize(msg):
+    #return encodestring(msg)
+    return pickle.dumps(msg)
+
+
+def deserialize(msg):
+    #return decodestring(msg)
+    return pickle.loads(msg)
