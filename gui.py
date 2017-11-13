@@ -34,7 +34,11 @@ class SudokuFrame(tk.Frame):
         for i, b in enumerate(self.boxes):
             r = i // 9
             c = i % 9
-            b.grid(row=r, column=c, ipadx=0, padx=3, ipady=4, pady=4)
+            # Add bold borders for 3x3 blocks
+            padx = (20, 3) if c == 3 or c == 6 else 3
+            pady = (20, 4) if r == 3 or r == 6 else 4
+
+            b.grid(row=r, column=c, ipadx=0, padx=padx, ipady=4, pady=pady)
 
     def validate_entry(self, value):
         allowed = (len(value) == 1 and value.isalnum()) or not value
@@ -52,7 +56,7 @@ class SudokuFrame(tk.Frame):
         LOG.debug("Get current state: %s" % cs)
         return cs
 
-    def generate_sudoku(self, valid_username=False):
+    def generate_sudoku(self, valid_username=False, valid_address=False):
         LOG.debug("Trying to generate new sudoku")
         # If some information is not valid
         if not valid_username:
@@ -61,6 +65,12 @@ class SudokuFrame(tk.Frame):
                                           "8 alphanumeric characters "
                                           "(empty strings not allowed, "
                                           "spaces not allowed)")
+            return
+
+        if not valid_address:
+            LOG.debug("Generation is not allowed")
+            tkMessageBox.showinfo("Info", "Please specify the correct server address"
+                                          "in format xxx.xxx.xxx.xxx:xxxx")
             return
 
         sudoku = su.get_sudoku()
@@ -134,39 +144,61 @@ class LeaderboardFrame(tk.Frame):
 
 
 class MenuFrame(tk.Frame):
-    def __init__(self, parent, frm_sudoku, width=25):
+    def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
         self.title = tk.Label(self, text="Multiplayer sudoku\nv0.0.1", font="Helvetica 16 bold")
         self.title.pack(side=tk.TOP)
 
-        # Create username frame with label and textfield
-        self.frm_username = tk.Frame(self)
-        self.frm_username.pack(side=tk.BOTTOM)
+        # FRAMES
+        self.frm_sudoku = frm_sudoku  # Bind with sudoku frame in order to have control on it
+        self.frm_leaderboard = LeaderboardFrame(self)
+        self.frm_username = tk.Frame(self)  # Create username frame with label and textfield
+        self.frm_address = tk.Frame(self)  # Create address frame with IP and port fields
 
-        # Label
+        # VALIDATION
+        self.valid_username = False
+        self.valid_address = False
+        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,  # Validation partial command
+                                   self.frm_sudoku,
+                                   self.valid_username,
+                                   self.valid_address)
+
+        # USERNAME
         self.lbl_username = tk.Label(self.frm_username,
                                      text="Username: ",
                                      font="Helvetica 12")
-        self.lbl_username.pack(side=tk.LEFT)
 
-        # Test entry
         self.sv_username = tk.StringVar()
         self.ent_username = tk.Entry(self.frm_username,
                                      bd=3,
                                      textvariable=self.sv_username,
                                      validate='key',
                                      validatecommand=(self.register(self.validate_username), '%P'))
+        # Position
         self.ent_username.pack(side=tk.RIGHT)
+        self.lbl_username.pack(side=tk.RIGHT)
 
-        # Create buttons
-        self.valid_username = False
-        self.frm_sudoku = frm_sudoku
-        self.vcmd_username = partial(SudokuFrame.generate_sudoku, self.frm_sudoku, self.valid_username)
+        # ADDRESS
+        self.lbl_address = tk.Label(self.frm_address,
+                                    text="Address:     ",
+                                    font="Helvetica 12")
+        self.sv_address = tk.StringVar()
+        self.sv_address.set(address)
+        self.ent_address = tk.Entry(self.frm_address,
+                                    bd=3,
+                                    textvariable=self.sv_address,
+                                    validate='key',
+                                    validatecommand=(self.register(self.validate_address), '%P'))
+        # Position
+        self.ent_address.pack(side=tk.RIGHT, fill=tk.X)
+        self.lbl_address.pack(side=tk.RIGHT, fill=tk.X)
+
+        # BUTTONS
         self.btn_new = tk.Button(self,
                                  text="New game",
                                  width=width,
                                  font="Helvetica 12",
-                                 command=self.vcmd_username)
+                                 command=self.vcmd_fields)
 
         self.btn_connect = tk.Button(self,
                                      width=width,
@@ -174,9 +206,9 @@ class MenuFrame(tk.Frame):
                                      font="Helvetica 12",
                                      command=self.connect)
 
-        self.frm_leaderboard = LeaderboardFrame(self)
-
-        # Organise objects
+        # ORGANISE
+        self.frm_username.pack(side=tk.BOTTOM)
+        self.frm_address.pack(side=tk.BOTTOM)
         self.btn_new.pack(side=tk.BOTTOM)
         self.btn_connect.pack(side=tk.BOTTOM)
         self.frm_leaderboard.pack(side=tk.TOP)
@@ -185,15 +217,35 @@ class MenuFrame(tk.Frame):
         p = re.compile('^[0-9A-Za-z]{1,8}$')
         if not re.match(p, username):
             self.valid_username = False
-            self.vcmd_username = partial(SudokuFrame.generate_sudoku, self.frm_sudoku, self.valid_username)
-            self.btn_new.config(command=self.vcmd_username)
             LOG.debug("Invalid username [%s], status %s" % (username, self.valid_username))
         else:
             self.valid_username = True
-            self.vcmd_username = partial(SudokuFrame.generate_sudoku, self.frm_sudoku, self.valid_username)
-            self.btn_new.config(command=self.vcmd_username)
             LOG.debug("Valid username [%s], status %s" % (username, self.valid_username))
+
+        self.update_vcmd()
         return True
+
+    def validate_address(self, address):
+        p = re.compile('^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$')
+        if not re.match(p, address):
+            self.valid_address = False
+            LOG.debug("Invalid address [%s], status %s" % (address, self.valid_address))
+        else:
+            self.valid_address = True
+            LOG.debug("Valid address [%s], status %s" % (address, self.valid_address))
+
+        self.update_vcmd()
+        return True
+
+    def update_vcmd(self):
+        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,
+                                   self.frm_sudoku,
+                                   self.valid_username,
+                                   self.valid_address)
+        try:
+            self.btn_new.config(command=self.vcmd_fields)
+        except AttributeError:
+            LOG.error("btn_new is not exist")
 
     def connect(self):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
