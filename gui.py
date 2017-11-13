@@ -1,4 +1,5 @@
 import Tkinter as tk
+import ttk
 import tkFont
 import tkMessageBox
 import logging
@@ -90,47 +91,68 @@ class SudokuFrame(tk.Frame):
 
 
 class LeaderboardFrame(tk.Frame):
-    def __init__(self, parent, players_limit=8):
-        tk.Frame.__init__(self, parent)
+    def __init__(self, parent, players_limit=8, width=25):
+        tk.Frame.__init__(self, parent, width=width)
         self.title = tk.Label(self,
                               text="Leaderboard",
                               height=1,
-                              font="Helvetica 12 bold")
+                              font="Helvetica 12")
+        self.title.pack(side=tk.TOP)
         self.players_limit = players_limit
 
         # Create string vars for every player with names and point
-        self.sv_players = [tk.StringVar() for i in range(self.players_limit)]
-        self.sv_points = [tk.StringVar() for i in range(self.players_limit)]
+        # self.sv_players = [tk.StringVar() for i in range(self.players_limit)]
+        # self.sv_points = [tk.StringVar() for i in range(self.players_limit)]
+
+        self.scrollbar_sessions = tk.Scrollbar(self)
+        self.tree = ttk.Treeview(self,
+                                 columns=('Player', 'Points'),
+                                 height=5,
+                                 # width=width,
+                                 yscrollcommand=self.scrollbar_sessions.set)
+        # self.tree.column(0, width=width)
+        # self.tree.column(1, width=width // 2 - 1)
+
+        # self.tree.heading('#0', text='Place')
+        self.tree.heading('#1', text='Player')
+        self.tree.heading('#2', text='Points')
+        self.tree.column('#0', minwidth=0, width=30, stretch=tk.NO, anchor=tk.W)
+        self.tree.column('#1', minwidth=0, width=120, stretch=tk.NO)
+        self.tree.column('#2', minwidth=0, width=120, stretch=tk.NO)
+        self.scrollbar_sessions.config(command=self.tree.yview)
+        self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(fill=tk.X)
+
 
         # Create labels for static representation
-        self.lbl_players = [tk.Label(self,
-                                     width=8,
-                                     textvariable=sv,
-                                     justify="left",
-                                     font="Courier 10") for sv in self.sv_players]
-        self.lbl_points = [tk.Label(self,
-                                    width=8,
-                                    textvariable=sv,
-                                    justify="left",
-                                    font="Courier 10") for sv in self.sv_points]
+        # self.lbl_players = [tk.Label(self,
+        #                              width=8,
+        #                              textvariable=sv,
+        #                              justify="left",
+        #                              font="Courier 10") for sv in self.sv_players]
+        # self.lbl_points = [tk.Label(self,
+        #                             width=8,
+        #                             textvariable=sv,
+        #                             justify="left",
+        #                             font="Courier 10") for sv in self.sv_points]
 
         # Fill the leaderboard table grid
-        self.title.grid(row=0,
-                        column=0,
-                        columnspan=2)
-
-        for i in range(self.players_limit):
-            self.lbl_players[i].grid(row=i+1,
-                                     column=0,
-                                     padx=2,
-                                     pady=0,
-                                     sticky="e")
-
-            self.lbl_points[i].grid(row=i+1,
-                                    column=1,
-                                    padx=2,
-                                    pady=0,
-                                    sticky="w")
+        # self.title.grid(row=0,
+        #                 column=0,
+        #                 columnspan=2)
+        #
+        # for i in range(self.players_limit):
+        #     self.lbl_players[i].grid(row=i+1,
+        #                              column=0,
+        #                              padx=2,
+        #                              pady=0,
+        #                              sticky="e")
+        #
+        #     self.lbl_points[i].grid(row=i+1,
+        #                             column=1,
+        #                             padx=2,
+        #                             pady=0,
+        #                             sticky="w")
 
     def fill(self, table):
         """
@@ -138,9 +160,31 @@ class LeaderboardFrame(tk.Frame):
         :param table: dict, player: points
         :return: None
         """
-        for i, player in enumerate(table):
-            self.sv_players[i].set(player)
-            self.sv_points[i].set(table[player])
+        self.tree.delete(*self.tree.get_children())
+        for i, player in enumerate(sorted(table, key=table.get)):
+            # self.sv_players[i].set(player)
+            # self.sv_points[i].set(table[player])
+            self.tree.insert("", "end", text=str(i+1), values=(player, table[player]))
+
+
+class SessionsFrame(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        self.lbl_sessions = tk.Label(self, text="Available sessions", font="Helvetica 12")
+        self.scrollbar_sessions = tk.Scrollbar(self)
+        self.list_sessions = tk.Listbox(self, selectmode=tk.SINGLE, selectbackground="blue",
+                                        selectforeground="white", height=5,  # This value is in lines
+                                        yscrollcommand=self.scrollbar_sessions.set)
+        self.lbl_sessions.pack(side=tk.TOP, fill=tk.BOTH)
+        self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
+        self.list_sessions.pack(fill=tk.X)
+        self.scrollbar_sessions.config(command=self.list_sessions.yview)
+
+    def fill(self, sessions):
+        self.list_sessions.delete(0, tk.END)
+        for s in sessions:
+            self.list_sessions.insert(tk.END, s)
 
 
 class MenuFrame(tk.Frame):
@@ -154,7 +198,8 @@ class MenuFrame(tk.Frame):
         self.frm_leaderboard = LeaderboardFrame(self)
         self.frm_username = tk.Frame(self)  # username frame with label and textfield
         self.frm_address = tk.Frame(self)   # address frame with IP and port fields
-        self.frm_sessions = tk.Frame(self)  # sessions frame with label and listbox
+        self.frm_sessions = SessionsFrame(self)
+        self.frm_host = tk.Frame(self)      # Host/Join buttons
 
         # VALIDATION
         self.valid_username = False
@@ -194,22 +239,6 @@ class MenuFrame(tk.Frame):
         self.ent_address.pack(side=tk.RIGHT, fill=tk.X)
         self.lbl_address.pack(side=tk.RIGHT, fill=tk.X)
 
-        # SESSION LIST
-        self.lbl_sessions = tk.Label(self.frm_sessions,
-                                     text="Available sessions",
-                                     font="Helvetica 12")
-        self.scrollbar_sessions = tk.Scrollbar(self.frm_sessions)
-        self.list_sessions = tk.Listbox(self.frm_sessions,
-                                        selectmode=tk.SINGLE,
-                                        selectbackground="blue",
-                                        selectforeground="white",
-                                        height=3,  # This value is in lines
-                                        yscrollcommand=self.scrollbar_sessions.set)
-        self.lbl_sessions.pack(side=tk.TOP, fill=tk.BOTH)
-        self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
-        self.list_sessions.pack(fill=tk.X)
-        self.scrollbar_sessions.config(command=self.list_sessions.yview)
-
         # BUTTONS
         self.btn_new = tk.Button(self,
                                  text="New game",
@@ -223,13 +252,29 @@ class MenuFrame(tk.Frame):
                                      font="Helvetica 12",
                                      command=self.connect)
 
+        self.btn_host = tk.Button(self.frm_host,
+                                  width=width//2-1,
+                                  text="Host",
+                                  font="Helvetica 12",
+                                  command=self.connect)
+
+        self.btn_join = tk.Button(self.frm_host,
+                                  width=width//2-1,
+                                  text="Join",
+                                  font="Helvetica 12",
+                                  command=self.connect)
+
+        self.btn_host.pack(side=tk.LEFT)
+        self.btn_join.pack(side=tk.RIGHT)
+
         # ORGANISE
         self.frm_username.pack(side=tk.BOTTOM)
         self.frm_address.pack(side=tk.BOTTOM)
         self.btn_new.pack(side=tk.BOTTOM)
         self.btn_connect.pack(side=tk.BOTTOM)
+        self.frm_host.pack(side=tk.BOTTOM)
         self.frm_sessions.pack(side=tk.BOTTOM, fill=tk.X)
-        self.frm_leaderboard.pack(side=tk.TOP)
+        self.frm_leaderboard.pack(side=tk.BOTTOM)
 
     def validate_username(self, username):
         p = re.compile('^[0-9A-Za-z]{1,8}$')
@@ -267,9 +312,7 @@ class MenuFrame(tk.Frame):
 
     def connect(self):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
-        self.list_sessions.delete(0, tk.END)
-        for i in range(4):
-            self.list_sessions.insert(tk.END, i)
+        self.frm_sessions.fill(["Session1", "Session2"])
 
 
 class MainWindow(tk.Tk):
