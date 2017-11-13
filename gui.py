@@ -152,8 +152,9 @@ class MenuFrame(tk.Frame):
         # FRAMES
         self.frm_sudoku = frm_sudoku  # Bind with sudoku frame in order to have control on it
         self.frm_leaderboard = LeaderboardFrame(self)
-        self.frm_username = tk.Frame(self)  # Create username frame with label and textfield
-        self.frm_address = tk.Frame(self)  # Create address frame with IP and port fields
+        self.frm_username = tk.Frame(self)  # username frame with label and textfield
+        self.frm_address = tk.Frame(self)   # address frame with IP and port fields
+        self.frm_sessions = tk.Frame(self)  # sessions frame with label and listbox
 
         # VALIDATION
         self.valid_username = False
@@ -193,6 +194,22 @@ class MenuFrame(tk.Frame):
         self.ent_address.pack(side=tk.RIGHT, fill=tk.X)
         self.lbl_address.pack(side=tk.RIGHT, fill=tk.X)
 
+        # SESSION LIST
+        self.lbl_sessions = tk.Label(self.frm_sessions,
+                                     text="Available sessions",
+                                     font="Helvetica 12")
+        self.scrollbar_sessions = tk.Scrollbar(self.frm_sessions)
+        self.list_sessions = tk.Listbox(self.frm_sessions,
+                                        selectmode=tk.SINGLE,
+                                        selectbackground="blue",
+                                        selectforeground="white",
+                                        height=3,  # This value is in lines
+                                        yscrollcommand=self.scrollbar_sessions.set)
+        self.lbl_sessions.pack(side=tk.TOP, fill=tk.BOTH)
+        self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
+        self.list_sessions.pack(fill=tk.X)
+        self.scrollbar_sessions.config(command=self.list_sessions.yview)
+
         # BUTTONS
         self.btn_new = tk.Button(self,
                                  text="New game",
@@ -211,6 +228,7 @@ class MenuFrame(tk.Frame):
         self.frm_address.pack(side=tk.BOTTOM)
         self.btn_new.pack(side=tk.BOTTOM)
         self.btn_connect.pack(side=tk.BOTTOM)
+        self.frm_sessions.pack(side=tk.BOTTOM, fill=tk.X)
         self.frm_leaderboard.pack(side=tk.TOP)
 
     def validate_username(self, username):
@@ -249,6 +267,9 @@ class MenuFrame(tk.Frame):
 
     def connect(self):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
+        self.list_sessions.delete(0, tk.END)
+        for i in range(4):
+            self.list_sessions.insert(tk.END, i)
 
 
 class MainWindow(tk.Tk):
