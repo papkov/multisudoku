@@ -445,7 +445,7 @@ class Client:
         """
 
         logging.info('Falling to receiver loop ...')
-        while 1:
+        while True:
             m = self.__session_rcv()
             if len(m) <= 0:
                 break

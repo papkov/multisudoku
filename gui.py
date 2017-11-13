@@ -1,13 +1,13 @@
 import Tkinter as tk
 import ttk
-import tkFont
 import tkMessageBox
 import logging
+import threading
 from functools import partial
 import re
 import sudoku as su
 
-FORMAT = '%(asctime)-15s %(levelname)s %(message)s'
+FORMAT = '%(asctime)-15s (%(threadName)-2s) %(levelname)s %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 LOG = logging.getLogger()
 
@@ -100,18 +100,12 @@ class LeaderboardFrame(tk.Frame):
         self.title.pack(side=tk.TOP)
         self.players_limit = players_limit
 
-        # Create string vars for every player with names and point
-        # self.sv_players = [tk.StringVar() for i in range(self.players_limit)]
-        # self.sv_points = [tk.StringVar() for i in range(self.players_limit)]
-
         self.scrollbar_sessions = tk.Scrollbar(self)
         self.tree = ttk.Treeview(self,
                                  columns=('Player', 'Points'),
                                  height=5,
                                  # width=width,
                                  yscrollcommand=self.scrollbar_sessions.set)
-        # self.tree.column(0, width=width)
-        # self.tree.column(1, width=width // 2 - 1)
 
         # self.tree.heading('#0', text='Place')
         self.tree.heading('#1', text='Player')
@@ -123,37 +117,6 @@ class LeaderboardFrame(tk.Frame):
         self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(fill=tk.X)
 
-
-        # Create labels for static representation
-        # self.lbl_players = [tk.Label(self,
-        #                              width=8,
-        #                              textvariable=sv,
-        #                              justify="left",
-        #                              font="Courier 10") for sv in self.sv_players]
-        # self.lbl_points = [tk.Label(self,
-        #                             width=8,
-        #                             textvariable=sv,
-        #                             justify="left",
-        #                             font="Courier 10") for sv in self.sv_points]
-
-        # Fill the leaderboard table grid
-        # self.title.grid(row=0,
-        #                 column=0,
-        #                 columnspan=2)
-        #
-        # for i in range(self.players_limit):
-        #     self.lbl_players[i].grid(row=i+1,
-        #                              column=0,
-        #                              padx=2,
-        #                              pady=0,
-        #                              sticky="e")
-        #
-        #     self.lbl_points[i].grid(row=i+1,
-        #                             column=1,
-        #                             padx=2,
-        #                             pady=0,
-        #                             sticky="w")
-
     def fill(self, table):
         """
         Fill leaderboard with data from server
@@ -162,8 +125,6 @@ class LeaderboardFrame(tk.Frame):
         """
         self.tree.delete(*self.tree.get_children())
         for i, player in enumerate(sorted(table, key=table.get)):
-            # self.sv_players[i].set(player)
-            # self.sv_points[i].set(table[player])
             self.tree.insert("", "end", text=str(i+1), values=(player, table[player]))
 
 
@@ -173,8 +134,11 @@ class SessionsFrame(tk.Frame):
 
         self.lbl_sessions = tk.Label(self, text="Available sessions", font="Helvetica 12")
         self.scrollbar_sessions = tk.Scrollbar(self)
-        self.list_sessions = tk.Listbox(self, selectmode=tk.SINGLE, selectbackground="blue",
-                                        selectforeground="white", height=5,  # This value is in lines
+        self.list_sessions = tk.Listbox(self,
+                                        selectmode=tk.SINGLE,
+                                        selectbackground="blue",
+                                        selectforeground="white",
+                                        height=5,  # This value is in lines
                                         yscrollcommand=self.scrollbar_sessions.set)
         self.lbl_sessions.pack(side=tk.TOP, fill=tk.BOTH)
         self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
@@ -190,7 +154,15 @@ class SessionsFrame(tk.Frame):
 class MenuFrame(tk.Frame):
     def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
-        self.title = tk.Label(self, text="Multiplayer sudoku\nv0.0.1", font="Helvetica 16 bold")
+
+        # Control
+        self.server = None
+        self.client = None
+        self.thread_server = None
+
+        self.title = tk.Label(self,
+                              text="Multiplayer sudoku\nv0.0.1",
+                              font="Helvetica 16 bold")
         self.title.pack(side=tk.TOP)
 
         # FRAMES
@@ -256,7 +228,7 @@ class MenuFrame(tk.Frame):
                                   width=width//2-1,
                                   text="Host",
                                   font="Helvetica 12",
-                                  command=self.connect)
+                                  command=self.host)
 
         self.btn_join = tk.Button(self.frm_host,
                                   width=width//2-1,
@@ -314,10 +286,35 @@ class MenuFrame(tk.Frame):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
         self.frm_sessions.fill(["Session1", "Session2"])
 
+    def host(self):
+        if not self.valid_address or self.server is None:
+            LOG.debug("Failed to host a server")
+            return False
+        if self.thread_server is not None:
+            LOG.debug("Server is already running")
+            return False
+        ip, port = self.ent_address.get().split(":")
+        LOG.debug("Hosting a server: %s:%s" % (ip, port))
+        self.server.listen((ip, int(port)))
+        self.thread_server = threading.Thread(target=self.server.loop, name="server")
+        LOG.debug("Starting a server thread")
+        self.thread_server.daemon = True
+        self.thread_server.start()
+        tkMessageBox.showinfo("Info", "Hosting a server: %s:%s\nAsk your friends to join!" % (ip, port))
+        return True
+
+
+    def set_server(self, server):
+        self.server = server
+
+    def set_client(self, client):
+        self.client = client
+
 
 class MainWindow(tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
+
         # Set window properties
         self.title("multisudoku")
         self.resizable(width=False, height=False)
@@ -339,6 +336,11 @@ class MainWindow(tk.Tk):
         self.pn_main.add(self.frm_menu)
         self.pn_main.add(self.pn_sudoku)
 
+    def set_server(self, server):
+        return self.frm_menu.set_server(server)
+
+    def set_client(self, client):
+        return self.frm_menu.set_client(client)
 
 if __name__ == "__main__":
     LOG.error("This file was not designed to run standalone")
