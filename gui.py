@@ -1,13 +1,13 @@
 import Tkinter as tk
 import ttk
-import tkFont
 import tkMessageBox
 import logging
+import threading
 from functools import partial
 import re
 import sudoku as su
 
-FORMAT = '%(asctime)-15s %(levelname)s %(message)s'
+FORMAT = '%(asctime)-15s (%(threadName)-2s) %(levelname)s %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 LOG = logging.getLogger()
 
@@ -76,16 +76,19 @@ class SudokuFrame(tk.Frame):
 
         sudoku = su.get_sudoku()
         unsolved = sum(sudoku["u"], [])
-        LOG.debug("Got unsolved sudoku with %d elements" % len(unsolved))
+        self.set_sudoku(unsolved)
+
+        LOG.debug("New sudoku was generated")
+
+    def set_sudoku(self, sudoku):
+        LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
         for i, b in enumerate(self.boxes):
             # Fix values that are not zero
             b.config(state="normal")
             b.delete(0, 'end')
-            if unsolved[i]:
-                b.insert(0, unsolved[i])
+            if sudoku[i]:
+                b.insert(0, sudoku[i])
                 b.config(state="readonly")
-
-        LOG.debug("New sudoku was generated")
 
         # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
@@ -100,18 +103,12 @@ class LeaderboardFrame(tk.Frame):
         self.title.pack(side=tk.TOP)
         self.players_limit = players_limit
 
-        # Create string vars for every player with names and point
-        # self.sv_players = [tk.StringVar() for i in range(self.players_limit)]
-        # self.sv_points = [tk.StringVar() for i in range(self.players_limit)]
-
         self.scrollbar_sessions = tk.Scrollbar(self)
         self.tree = ttk.Treeview(self,
                                  columns=('Player', 'Points'),
                                  height=5,
                                  # width=width,
                                  yscrollcommand=self.scrollbar_sessions.set)
-        # self.tree.column(0, width=width)
-        # self.tree.column(1, width=width // 2 - 1)
 
         # self.tree.heading('#0', text='Place')
         self.tree.heading('#1', text='Player')
@@ -123,37 +120,6 @@ class LeaderboardFrame(tk.Frame):
         self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.pack(fill=tk.X)
 
-
-        # Create labels for static representation
-        # self.lbl_players = [tk.Label(self,
-        #                              width=8,
-        #                              textvariable=sv,
-        #                              justify="left",
-        #                              font="Courier 10") for sv in self.sv_players]
-        # self.lbl_points = [tk.Label(self,
-        #                             width=8,
-        #                             textvariable=sv,
-        #                             justify="left",
-        #                             font="Courier 10") for sv in self.sv_points]
-
-        # Fill the leaderboard table grid
-        # self.title.grid(row=0,
-        #                 column=0,
-        #                 columnspan=2)
-        #
-        # for i in range(self.players_limit):
-        #     self.lbl_players[i].grid(row=i+1,
-        #                              column=0,
-        #                              padx=2,
-        #                              pady=0,
-        #                              sticky="e")
-        #
-        #     self.lbl_points[i].grid(row=i+1,
-        #                             column=1,
-        #                             padx=2,
-        #                             pady=0,
-        #                             sticky="w")
-
     def fill(self, table):
         """
         Fill leaderboard with data from server
@@ -162,8 +128,6 @@ class LeaderboardFrame(tk.Frame):
         """
         self.tree.delete(*self.tree.get_children())
         for i, player in enumerate(sorted(table, key=table.get)):
-            # self.sv_players[i].set(player)
-            # self.sv_points[i].set(table[player])
             self.tree.insert("", "end", text=str(i+1), values=(player, table[player]))
 
 
@@ -173,8 +137,11 @@ class SessionsFrame(tk.Frame):
 
         self.lbl_sessions = tk.Label(self, text="Available sessions", font="Helvetica 12")
         self.scrollbar_sessions = tk.Scrollbar(self)
-        self.list_sessions = tk.Listbox(self, selectmode=tk.SINGLE, selectbackground="blue",
-                                        selectforeground="white", height=5,  # This value is in lines
+        self.list_sessions = tk.Listbox(self,
+                                        selectmode=tk.SINGLE,
+                                        selectbackground="blue",
+                                        selectforeground="white",
+                                        height=5,  # This value is in lines
                                         yscrollcommand=self.scrollbar_sessions.set)
         self.lbl_sessions.pack(side=tk.TOP, fill=tk.BOTH)
         self.scrollbar_sessions.pack(side=tk.RIGHT, fill=tk.Y)
@@ -187,10 +154,45 @@ class SessionsFrame(tk.Frame):
             self.list_sessions.insert(tk.END, s)
 
 
+class NotificationsFrame(tk.Frame):
+    def __init__(self, parent, width=38):
+        tk.Frame.__init__(self, parent)
+
+        self.lbl_notifications = tk.Label(self, text="Notifications", font="Helvetica 12")
+        self.scrollbar_notifications = tk.Scrollbar(self)
+        self.txt_notifications = tk.Text(self,
+                                         height=5,
+                                         yscrollcommand=self.scrollbar_notifications.set,
+                                         wrap=tk.WORD,
+                                         padx=2,
+                                         pady=2,
+                                         spacing1=4,
+                                         width=width)
+
+        self.lbl_notifications.pack(side=tk.TOP, fill=tk.BOTH)
+        self.scrollbar_notifications.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt_notifications.pack(fill=tk.X)
+        self.scrollbar_notifications.config(command=self.txt_notifications.yview)
+
+    def add(self, text):
+        self.txt_notifications.insert(tk.END, text + "\n" )
+
+
 class MenuFrame(tk.Frame):
     def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
-        self.title = tk.Label(self, text="Multiplayer sudoku\nv0.0.1", font="Helvetica 16 bold")
+
+        # Control
+        self.server = None
+        self.client = None
+        # Threads for server and client
+        self.thread_server = None
+        self.thread_client_notifications = None
+        self.thread_client_network = None
+
+        self.title = tk.Label(self,
+                              text="Multiplayer sudoku\nv0.0.1",
+                              font="Helvetica 16 bold")
         self.title.pack(side=tk.TOP)
 
         # FRAMES
@@ -199,15 +201,16 @@ class MenuFrame(tk.Frame):
         self.frm_username = tk.Frame(self)  # username frame with label and textfield
         self.frm_address = tk.Frame(self)   # address frame with IP and port fields
         self.frm_sessions = SessionsFrame(self)
+        self.frm_notifications = NotificationsFrame(self)
         self.frm_host = tk.Frame(self)      # Host/Join buttons
 
         # VALIDATION
         self.valid_username = False
         self.valid_address = False
-        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,  # Validation partial command
-                                   self.frm_sudoku,
-                                   self.valid_username,
-                                   self.valid_address)
+        # self.vcmd_fields = partial(SudokuFrame.generate_sudoku,  # Validation partial command
+        #                            self.frm_sudoku,
+        #                            self.valid_username,
+        #                            self.valid_address)
 
         # USERNAME
         self.lbl_username = tk.Label(self.frm_username,
@@ -244,7 +247,7 @@ class MenuFrame(tk.Frame):
                                  text="New game",
                                  width=width,
                                  font="Helvetica 12",
-                                 command=self.vcmd_fields)
+                                 command=self.new_sudoku)
 
         self.btn_connect = tk.Button(self,
                                      width=width,
@@ -256,13 +259,13 @@ class MenuFrame(tk.Frame):
                                   width=width//2-1,
                                   text="Host",
                                   font="Helvetica 12",
-                                  command=self.connect)
+                                  command=self.host)
 
         self.btn_join = tk.Button(self.frm_host,
                                   width=width//2-1,
                                   text="Join",
                                   font="Helvetica 12",
-                                  command=self.connect)
+                                  command=self.join)
 
         self.btn_host.pack(side=tk.LEFT)
         self.btn_join.pack(side=tk.RIGHT)
@@ -275,6 +278,7 @@ class MenuFrame(tk.Frame):
         self.frm_host.pack(side=tk.BOTTOM)
         self.frm_sessions.pack(side=tk.BOTTOM, fill=tk.X)
         self.frm_leaderboard.pack(side=tk.BOTTOM)
+        self.frm_notifications.pack(side=tk.BOTTOM)
 
     def validate_username(self, username):
         p = re.compile('^[0-9A-Za-z]{1,8}$')
@@ -285,7 +289,7 @@ class MenuFrame(tk.Frame):
             self.valid_username = True
             LOG.debug("Valid username [%s], status %s" % (username, self.valid_username))
 
-        self.update_vcmd()
+        # self.update_vcmd()
         return True
 
     def validate_address(self, address):
@@ -297,27 +301,122 @@ class MenuFrame(tk.Frame):
             self.valid_address = True
             LOG.debug("Valid address [%s], status %s" % (address, self.valid_address))
 
-        self.update_vcmd()
+        # self.update_vcmd()
         return True
 
-    def update_vcmd(self):
-        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,
-                                   self.frm_sudoku,
-                                   self.valid_username,
-                                   self.valid_address)
-        try:
-            self.btn_new.config(command=self.vcmd_fields)
-        except AttributeError:
-            LOG.error("btn_new is not exist")
+    # def update_vcmd(self):
+    #     self.vcmd_fields = partial(SudokuFrame.generate_sudoku,
+    #                                self.frm_sudoku,
+    #                                self.valid_username,
+    #                                self.valid_address)
+    #     try:
+    #         self.btn_new.config(command=self.vcmd_fields)
+    #     except AttributeError:
+    #         LOG.error("btn_new is not exist")
 
     def connect(self):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
         self.frm_sessions.fill(["Session1", "Session2"])
 
+    def host(self):
+        """
+        Host a server on localhost
+        :return: boolean, status
+        """
+        # TODO handle exceptions
+        # Check if server was set up and not yet running
+        if not self.valid_address or self.server is None:
+            LOG.debug("Failed to host a server")
+            return False
+        if self.thread_server is not None:
+            LOG.debug("Server is already running")
+            return False
+        # Address should be valid at this point
+        ip, port = self.ent_address.get().split(":")
+
+        LOG.debug("Hosting a server: %s:%s" % (ip, port))
+        self.server.listen((ip, int(port)))
+        self.thread_server = threading.Thread(target=self.server.loop, name="server")
+
+        LOG.debug("Starting a server thread")
+        self.thread_server.daemon = True
+        self.thread_server.start()
+
+        tkMessageBox.showinfo("Info", "Hosting a server: %s:%s\nAsk your friends to join!" % (ip, port))
+        return True
+
+    def join(self):
+        """
+        Join a server by address provided through text field
+        :return:
+        """
+        if not self.valid_address or self.server is None:
+            LOG.debug("Failed to join a server")
+            return False
+        # TODO: ability to restart client with different name
+        if self.thread_client_network is not None:
+            LOG.debug("Client is already running")
+            return False
+        if not self.valid_username:
+            LOG.debug("Username is invalid")
+            tkMessageBox.showinfo("Info", "Username should not be longer than "
+                                          "8 alphanumeric characters "
+                                          "(empty strings not allowed, "
+                                          "spaces not allowed)")
+            return False
+
+        # Address should be valid at this point
+        ip, port = self.ent_address.get().split(":")
+        server_address = (ip, int(port))
+
+        if self.client.connect(server_address):
+            logging.debug("Client connected to %s:%s" % (ip, port))
+
+            # Set and start client threads
+            self.thread_client_network = threading.Thread(name='client_network',
+                                                          target=self.client.network_loop)
+            self.thread_client_notifications = threading.Thread(name='client_notifications',
+                                                                target=self.client.notifications_loop)
+            self.thread_client_notifications.daemon = True
+            self.thread_client_network.daemon = True
+            self.thread_client_network.start()
+            self.thread_client_notifications.start()
+            logging.debug("Client threads are running")
+
+        else:
+            LOG.debug("Failed to connect to server %s:%s" % (ip, port))
+            return False
+
+        # TODO handle name rejection
+        # Trying to set a name
+        name = self.sv_username.get()
+        if self.client.set_my_name(name):
+            logging.debug("Your are connected to the game server by name [%s]" % name)
+            return True
+        else:
+            logging.debug("Server rejected name [%s]" % name)
+            return False
+
+    def new_sudoku(self, complexity=5):
+        if self.client.set_new_sudoku_to_guess(complexity):
+            sud = self.client.get_current_progress()
+            print(sud)
+            logging.debug("Received new sudoku %sx%s" % (len(sud), len(sud[0])))
+            self.frm_sudoku.set_sudoku([item for sublist in sud for item in sublist])
+        else:
+            logging.error("Failed to receive new sudoku")
+
+    def set_server(self, server):
+        self.server = server
+
+    def set_client(self, client):
+        self.client = client
+
 
 class MainWindow(tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
+
         # Set window properties
         self.title("multisudoku")
         self.resizable(width=False, height=False)
@@ -338,6 +437,15 @@ class MainWindow(tk.Tk):
         # Add panes to main pane
         self.pn_main.add(self.frm_menu)
         self.pn_main.add(self.pn_sudoku)
+
+    def set_server(self, server):
+        return self.frm_menu.set_server(server)
+
+    def set_client(self, client):
+        return self.frm_menu.set_client(client)
+
+    def notify(self, notification):
+        return self.frm_menu.frm_notifications.add(notification)
 
 
 if __name__ == "__main__":
