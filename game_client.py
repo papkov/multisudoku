@@ -1,8 +1,3 @@
-'''
-Created on Oct 18, 2016
-
-@author: devel
-'''
 from tempfile import mktemp
 logfile = mktemp()
 import logging
@@ -22,9 +17,9 @@ REQ_GM_GET_STATE = 'A'
 REQ_GM_GUESS = 'B'
 REQ_GM_SET_SUDOKU = 'C'
 REQ_GM_SET_NAME = 'D'
-CTR_MSGS = { REQ_GM_GET_STATE:'Get the current state of the guessed word',
-             REQ_GM_GUESS:'Propose a letter to guess',
-             REQ_GM_SET_SUDOKU:'Propose a new word to guess'
+CTR_MSGS = { REQ_GM_GET_STATE:'Get the current state of the guessed sudoku',
+             REQ_GM_GUESS:'Propose a number to guess',
+             REQ_GM_SET_SUDOKU:'Ask a new sudoku to guess'
             }
 # Responses--------------------------------------------------------------------
 RSP_GM_STATE = 'a'
@@ -44,11 +39,9 @@ MSG_SEP = ';'
 DEFAULT_RCV_BUFSIZE = 1
 
 def serialize(msg):
-    #return encodestring(msg)
     return pickle.dumps(msg)
 
 def deserialize(msg):
-    #return decodestring(msg)
     return pickle.loads(msg)
 
 class OutputClosedException(Exception):
@@ -91,18 +84,18 @@ class AbstractSyncIO:
     def input(self,prompt='',hidden=False):
         raise NotImplementedError
 
-    def __input_closed_excpetion_wrap(self,prompt='',hidden=False):
+    def __input_closed_exception_wrap(self,prompt='',hidden=False):
         if self.__input_closed:
             raise InputClosedException
         return self.input(prompt, hidden)
 
     def input_sync(self,prompt='>> '):
-        self.__input_closed_excpetion_wrap(hidden=True)
+        self.__input_closed_exception_wrap(hidden=True)
         with self.__console_lock:
             self.__input_lock = True
-        msg = self.__input_closed_excpetion_wrap(prompt)
+        msg = self.__input_closed_exception_wrap(prompt)
         while len(msg) <= 0:
-            msg = self.__input_closed_excpetion_wrap(prompt)
+            msg = self.__input_closed_exception_wrap(prompt)
         with self.__console_lock:
             self.__input_lock = False
             self.__console_lock.notifyAll()
@@ -230,7 +223,7 @@ class Client():
         pos = [pos1,pos2]
         logging.debug(\
             'Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
-        payload = serialize((num,pos))
+        payload = serialize((num,pos, self.__my_name))
         rsp = self.__sync_request(REQ_GM_GUESS, payload)
         if rsp != None:
             head,payload = rsp
@@ -249,20 +242,22 @@ class Client():
                     'Expected [%s] received [%s]' % (RSP_GM_GUESS,head))
 
     def get_current_progress(self):
-        '''Get current progress of word guessing'''
+        '''Get current progress of sudoku guessing and players leaderboard (tuple)'''
         logging.debug(\
             'Requesting the current state ...')
         rsp = self.__sync_request(REQ_GM_GET_STATE)
         if rsp != None:
             head,payload = rsp
             if head == RSP_GM_STATE:
-                uncovered_sudoku = deserialize(payload)
+                uncovered_sudoku, leaderboard = deserialize(payload)
                 self.__current_progress = uncovered_sudoku
                 if len(uncovered_sudoku) > 0:
                     logging.debug('Current uncovered sudoku [%s] received' %
                                   [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
                     self.__io.output_sync('Current progress: [%s]' %
                                           [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
+                    self.__io.output_sync('Current leaderboard: [%s]' %
+                                         str(leaderboard))
                     self.__state_change(self.__gm_states.NEED_NUMBER)
                 else:
                     if self.__gm_state != self.__gm_states.NEED_SUDOKU:
@@ -421,6 +416,8 @@ class Client():
                 break
             if self.__gm_state == self.__gm_states.NEED_NAME:
                 self.set_my_name(user_input)
+            elif self.__gm_state == self.__gm_states.NEED_SESSION:
+                self.select_session(user_input)
             elif self.__gm_state == self.__gm_states.NEED_SUDOKU:
                 self.set_new_sudoku_to_guess(user_input)
             elif self.__gm_state == self.__gm_states.NEED_NUMBER:
