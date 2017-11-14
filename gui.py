@@ -76,16 +76,19 @@ class SudokuFrame(tk.Frame):
 
         sudoku = su.get_sudoku()
         unsolved = sum(sudoku["u"], [])
-        LOG.debug("Got unsolved sudoku with %d elements" % len(unsolved))
+        self.set_sudoku(unsolved)
+
+        LOG.debug("New sudoku was generated")
+
+    def set_sudoku(self, sudoku):
+        LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
         for i, b in enumerate(self.boxes):
             # Fix values that are not zero
             b.config(state="normal")
             b.delete(0, 'end')
-            if unsolved[i]:
-                b.insert(0, unsolved[i])
+            if sudoku[i]:
+                b.insert(0, sudoku[i])
                 b.config(state="readonly")
-
-        LOG.debug("New sudoku was generated")
 
         # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
@@ -204,10 +207,10 @@ class MenuFrame(tk.Frame):
         # VALIDATION
         self.valid_username = False
         self.valid_address = False
-        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,  # Validation partial command
-                                   self.frm_sudoku,
-                                   self.valid_username,
-                                   self.valid_address)
+        # self.vcmd_fields = partial(SudokuFrame.generate_sudoku,  # Validation partial command
+        #                            self.frm_sudoku,
+        #                            self.valid_username,
+        #                            self.valid_address)
 
         # USERNAME
         self.lbl_username = tk.Label(self.frm_username,
@@ -244,7 +247,7 @@ class MenuFrame(tk.Frame):
                                  text="New game",
                                  width=width,
                                  font="Helvetica 12",
-                                 command=self.vcmd_fields)
+                                 command=self.new_sudoku)
 
         self.btn_connect = tk.Button(self,
                                      width=width,
@@ -286,7 +289,7 @@ class MenuFrame(tk.Frame):
             self.valid_username = True
             LOG.debug("Valid username [%s], status %s" % (username, self.valid_username))
 
-        self.update_vcmd()
+        # self.update_vcmd()
         return True
 
     def validate_address(self, address):
@@ -298,18 +301,18 @@ class MenuFrame(tk.Frame):
             self.valid_address = True
             LOG.debug("Valid address [%s], status %s" % (address, self.valid_address))
 
-        self.update_vcmd()
+        # self.update_vcmd()
         return True
 
-    def update_vcmd(self):
-        self.vcmd_fields = partial(SudokuFrame.generate_sudoku,
-                                   self.frm_sudoku,
-                                   self.valid_username,
-                                   self.valid_address)
-        try:
-            self.btn_new.config(command=self.vcmd_fields)
-        except AttributeError:
-            LOG.error("btn_new is not exist")
+    # def update_vcmd(self):
+    #     self.vcmd_fields = partial(SudokuFrame.generate_sudoku,
+    #                                self.frm_sudoku,
+    #                                self.valid_username,
+    #                                self.valid_address)
+    #     try:
+    #         self.btn_new.config(command=self.vcmd_fields)
+    #     except AttributeError:
+    #         LOG.error("btn_new is not exist")
 
     def connect(self):
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
@@ -394,6 +397,14 @@ class MenuFrame(tk.Frame):
             logging.debug("Server rejected name [%s]" % name)
             return False
 
+    def new_sudoku(self, complexity=5):
+        if self.client.set_new_sudoku_to_guess(complexity):
+            sud = self.client.get_current_progress()
+            print(sud)
+            logging.debug("Received new sudoku %sx%s" % (len(sud), len(sud[0])))
+            self.frm_sudoku.set_sudoku([item for sublist in sud for item in sublist])
+        else:
+            logging.error("Failed to receive new sudoku")
 
     def set_server(self, server):
         self.server = server

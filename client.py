@@ -61,10 +61,7 @@ class Client:
         with self.__gm_state_lock:
             self.__gm_state = newstate
             logging.debug('Games state changed to [%d]' % newstate)
-            if self.gui is None:
-                self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
-            else:
-                self.gui.notify(self.__gm_ui_input_prompts[newstate])
+            self.notify(self.__gm_ui_input_prompts[newstate])
 
     def set_my_name(self, name):
         """
@@ -80,17 +77,11 @@ class Client:
                 if payload[0] == '1':
                     logging.debug('Server confirmed player\'s name')
                     self.__my_name = name
-                    if self.gui is None:
-                        self.__io.output_sync('You joined the game!')
-                    else:
-                        self.gui.notify('You joined the game!')
+                    self.notify('You joined the game!')
                     return True
                 else:
                     logging.debug('Server rejected player\'s name')
-                    if self.gui is None:
-                        self.__io.output_sync('Please select different name.')
-                    else:
-                        self.gui.notify('Please select different name.')
+                    self.notify('Please select different name.')
                     return False
             else:
                 logging.warn('Protocol error, unexpected control code!')
@@ -109,11 +100,11 @@ class Client:
             if head == RSP_GM_SET_SUDOKU:
                 if payload[0] == '1':
                     logging.debug('Server confirmed complexity settings: %s' % complexity)
-                    self.__io.output_sync('Let others guess')
+                    self.notify('Let others guess')
                     return True
                 else:
                     logging.debug('Server rejected player\'s complexity %s' % complexity)
-                    logging.debug('Someone was faster in setting complexity!')
+                    self.notify('Someone was faster in setting complexity!')
                     return False
             else:
                 logging.warn('Protocol error, unexpected control code!')
@@ -133,14 +124,14 @@ class Client:
         payload = serialize((num,pos))
         rsp = self.__sync_request(REQ_GM_GUESS, payload)
         if rsp is not None:
-            head,payload = rsp
+            head, payload = rsp
             if head == RSP_GM_GUESS:
                 if payload[0] == '1':
                     logging.debug('Server confirmed %i on [%i][%i]' % (num,pos[0],pos[1]))
                     return True
                 else:
                     logging.debug('Server rejected %i on [%i][%i]' % (num,pos[0],pos[1]))
-                    self.__io.output_sync('Wrong number %i on [%i][%i]' % (num,pos[0],pos[1]))
+                    self.notify('Wrong number %i on [%i][%i]' % (num,pos[0],pos[1]))
                     self.get_current_progress()
                     return False
             else:
@@ -162,7 +153,7 @@ class Client:
                 if len(uncovered_sudoku) > 0:
                     logging.debug('Current uncovered sudoku [%s] received' %
                                   [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
-                    self.__io.output_sync('Current progress: [%s]' %
+                    self.notify('Current progress: [%s]' %
                                           [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
                     self.__state_change(self.__gm_states.NEED_NUMBER)
                 else:
@@ -171,6 +162,7 @@ class Client:
             else:
                 logging.warn('Protocol error, unexpected control code!')
                 logging.warn('Expected [%s] received [%s]' % (RSP_GM_STATE,head))
+        return self.__current_progress
 
     def stop(self):
         """
@@ -368,7 +360,7 @@ class Client:
                 msg = self.__rcv_async_msgs.pop(0)
                 if msg == 'DIE!':
                     return
-            self.__io.output_sync('Server Notification: %s' % msg)
+            self.notify('Server Notification: %s' % msg)
             self.get_current_progress()
 
     def network_loop(self):
@@ -382,6 +374,12 @@ class Client:
             if len(m) <= 0:
                 break
             self.__protocol_rcv(m)
+
+    def notify(self, text):
+        if self.gui is None:
+            self.__io.output_sync(text)
+        else:
+            self.gui.notify(text)
 
 
 if __name__ == '__main__':
