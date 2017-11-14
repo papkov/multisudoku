@@ -158,7 +158,10 @@ class MenuFrame(tk.Frame):
         # Control
         self.server = None
         self.client = None
+        # Threads for server and client
         self.thread_server = None
+        self.thread_client_notifications = None
+        self.thread_client_network = None
 
         self.title = tk.Label(self,
                               text="Multiplayer sudoku\nv0.0.1",
@@ -234,7 +237,7 @@ class MenuFrame(tk.Frame):
                                   width=width//2-1,
                                   text="Join",
                                   font="Helvetica 12",
-                                  command=self.connect)
+                                  command=self.join)
 
         self.btn_host.pack(side=tk.LEFT)
         self.btn_join.pack(side=tk.RIGHT)
@@ -287,22 +290,66 @@ class MenuFrame(tk.Frame):
         self.frm_sessions.fill(["Session1", "Session2"])
 
     def host(self):
+        """
+        Host a server on localhost
+        :return: boolean, status
+        """
+        # TODO handle exceptions
+        # Check if server was set up and not yet running
         if not self.valid_address or self.server is None:
             LOG.debug("Failed to host a server")
             return False
         if self.thread_server is not None:
             LOG.debug("Server is already running")
             return False
+        # Address should be valid at this point
         ip, port = self.ent_address.get().split(":")
+
         LOG.debug("Hosting a server: %s:%s" % (ip, port))
         self.server.listen((ip, int(port)))
         self.thread_server = threading.Thread(target=self.server.loop, name="server")
+
         LOG.debug("Starting a server thread")
         self.thread_server.daemon = True
         self.thread_server.start()
+
         tkMessageBox.showinfo("Info", "Hosting a server: %s:%s\nAsk your friends to join!" % (ip, port))
         return True
 
+    def join(self):
+        """
+        Join a server by address provided through text field
+        :return:
+        """
+        if not self.valid_address or self.server is None:
+            LOG.debug("Failed to join a server")
+            return False
+        if self.thread_client_network is not None:
+            LOG.debug("Client is already running")
+            return False
+
+        # Address should be valid at this point
+        ip, port = self.ent_address.get().split(":")
+        server_address = (ip, int(port))
+
+        if self.client.connect(server_address):
+            logging.debug("Client connected to %s:%s" % (ip, port))
+
+            # Set and start client threads
+            self.thread_client_network = threading.Thread(name='client_network',
+                                                          target=self.client.network_loop)
+            self.thread_client_notifications = threading.Thread(name='client_notifications',
+                                                                target=self.client.notifications_loop)
+            self.thread_client_notifications.daemon = True
+            self.thread_client_network.daemon = True
+            self.thread_client_network.start()
+            self.thread_client_notifications.start()
+            logging.debug("Client threads are running")
+
+            return True
+        else:
+            LOG.debug("Failed to connect to server %s:%s" % (ip, port))
+            return False
 
     def set_server(self, server):
         self.server = server
@@ -341,6 +388,7 @@ class MainWindow(tk.Tk):
 
     def set_client(self, client):
         return self.frm_menu.set_client(client)
+
 
 if __name__ == "__main__":
     LOG.error("This file was not designed to run standalone")

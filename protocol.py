@@ -35,3 +35,7 @@ def serialize(msg):
 def deserialize(msg):
     #return decodestring(msg)
     return pickle.loads(msg)
+
+
+def enum(**vals):
+    return type('Enum', (), vals)

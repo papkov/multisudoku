@@ -1,99 +1,17 @@
 from tempfile import mktemp
-from threading import Thread, Condition, Lock, currentThread
-from getpass import getpass
+from threading import Thread, Condition, Lock
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
 from socket import error as soc_err
+
 from protocol import *
+from syncIO import *
+
 import logging
 logfile = mktemp()
 logging.basicConfig(filename=logfile,
                     filemode='a',
                     level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
-
-
-class OutputClosedException(Exception):
-    def __init__(self):
-        Exception.__init__(self, 'Output PIPE closed!')
-
-
-class InputClosedException(Exception):
-    def __init__(self):
-        Exception.__init__(self, 'Input PIPE closed!')
-
-
-def enum(**vals):
-    return type('Enum', (), vals)
-
-
-class AbstractSyncIO:
-    ioclose = enum(IN=0, OUT=1, BOTH=2)
-
-    def __init__(self):
-        self.__console_lock = Condition()
-        self.__input_lock = False
-        self.__output_closed = False
-        self.__input_closed = False
-
-    def output(self, msg):
-        raise NotImplementedError
-
-    def output_sync(self, msg):
-        if self.__output_closed:
-            raise OutputClosedException
-        with self.__console_lock:
-            while self.__input_lock:
-                self.__console_lock.wait()
-                if self.__output_closed:
-                    raise OutputClosedException
-            self.output(msg)
-
-    def input(self, prompt='', hidden=False):
-        raise NotImplementedError
-
-    def __input_closed_exception_wrap(self, prompt='', hidden=False):
-        if self.__input_closed:
-            raise InputClosedException
-        return self.input(prompt, hidden)
-
-    def input_sync(self, prompt='>>'):
-        self.__input_closed_exception_wrap(hidden=True)
-        with self.__console_lock:
-            self.__input_lock = True
-        msg = self.__input_closed_exception_wrap(prompt)
-        while len(msg) <= 0:
-            msg = self.__input_closed_exception_wrap(prompt)
-        with self.__console_lock:
-            self.__input_lock = False
-            self.__console_lock.notifyAll()
-        return msg
-
-    def close(self, pipe=ioclose.BOTH):
-        if pipe in [self.ioclose.BOTH, self.ioclose.IN]:
-            with self.__console_lock:
-                if not self.__input_closed:
-                    self.__input_closed = True
-        if pipe in [self.ioclose.BOTH, self.ioclose.OUT]:
-            with self.__console_lock:
-                if not self.__output_closed:
-                    self.__output_closed = True
-
-
-class SyncConsoleAppenderRawInputReader(AbstractSyncIO):
-    def output(self, msg, show_caller=False):
-        if show_caller:
-            caller = currentThread()
-            print '%s: %s' % (caller.name, msg)
-        else:
-            print msg
-
-    def input(self, prompt='', hidden=False):
-        if hidden:
-            return getpass(prompt)
-        return raw_input(prompt)
-
-    #def input(self, prompt='', hidden=False):
-     #  return raw_input(prompt)
 
 
 class Client:
@@ -106,21 +24,20 @@ class Client:
     )
 
     __gm_ui_input_prompts = {
-        __gm_states.NEED_NAME : 'Enter player name to join the game!',
-        __gm_states.NEED_SUDOKU : 'Enter complexity of sudoku to generate!',
-        __gm_states.NEED_NUMBER : 'Enter the number and position you guess!'
+        __gm_states.NEED_NAME: 'Enter player name to join the game!',
+        __gm_states.NEED_SUDOKU: 'Enter complexity of sudoku to generate!',
+        __gm_states.NEED_NUMBER: 'Enter the number and position you guess!'
     }
 
     def __init__(self, io):
         # Network related
         self.__send_lock = Lock()   # Only one entity can send out at a time
 
-        # Here we collect the received responses and notify the waiting
-        # entities
+        # Here we collect the received responses and notify the waiting entities
         self.__rcv_sync_msgs_lock = Condition()  # To wait/notify on received
-        self.__rcv_sync_msgs = [] # To collect the received responses
+        self.__rcv_sync_msgs = []  # To collect the received responses
         self.__rcv_async_msgs_lock = Condition()
-        self.__rcv_async_msgs = [] # To collect the received notifications
+        self.__rcv_async_msgs = []  # To collect the received notifications
 
         self.__io = io  # User interface IO
 
@@ -130,7 +47,13 @@ class Client:
         self.__my_name = None
         self.__current_progress = []
 
-    def __state_change(self,newstate):
+        # GUI to control
+        self.gui = None
+
+    def set_gui(self, gui):
+        self.gui = gui
+
+    def __state_change(self, newstate):
         """
         Set the new state of the game
         """
@@ -140,7 +63,7 @@ class Client:
             logging.debug('Games state changed to [%d]' % newstate)
             self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
 
-    def set_my_name(self,name):
+    def set_my_name(self, name):
         """
         Setup player name before we can join the game
         """
@@ -223,7 +146,7 @@ class Client:
         logging.debug('Requesting the current state ...')
         rsp = self.__sync_request(REQ_GM_GET_STATE)
         if rsp is not None:
-            head,payload = rsp
+            head, payload = rsp
             if head == RSP_GM_STATE:
                 uncovered_sudoku = deserialize(payload)
                 self.__current_progress = uncovered_sudoku
@@ -429,7 +352,7 @@ class Client:
         """
 
         logging.info('Falling to notifier loop ...')
-        while 1:
+        while True:
             with self.__rcv_async_msgs_lock:
                 if len(self.__rcv_async_msgs) <= 0:
                     self.__rcv_async_msgs_lock.wait()
