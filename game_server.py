@@ -20,9 +20,9 @@ REQ_GM_GET_STATE = 'A'
 REQ_GM_GUESS = 'B'
 REQ_GM_SET_SUDOKU = 'C'
 REQ_GM_SET_NAME = 'D'
-CTR_MSGS = { REQ_GM_GET_STATE:'Get the current state of the guessed word',
-             REQ_GM_GUESS:'Propose a letter to guess',
-             REQ_GM_SET_SUDOKU:'Propose a new word to guess'
+CTR_MSGS = { REQ_GM_GET_STATE:'Get the current state of the guessed sudoku',
+             REQ_GM_GUESS:'Propose a number to guess',
+             REQ_GM_SET_SUDOKU:'Ask a new sudoku to guess'
             }
 # Responses--------------------------------------------------------------------
 RSP_GM_STATE = 'a'
@@ -91,6 +91,7 @@ class Game():
         if name in players:
             return False
         self.__players.append(client_session)
+        self.__scores[name] = 0
         self.__notify_update('joined game!')
         return True
 
@@ -112,24 +113,29 @@ class Game():
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
 
-    def guess_number(self,num,pos):
+    def guess_number(self,num,pos,name):
         with self.__gm_lock:
             r = False
             if num == self.__sudoku_to_guess[pos[0]][pos[1]]:
                 self.__sudoku_uncovered[pos[0]][pos[1]] = num
                 self.__notify_update('did guess %i in position [%i][%i]!' % (num,pos[0],pos[1]))
                 r = True
+                self.__scores[name] = self.__scores[name] + 1
+                print(self.__scores)
+            else:
+                self.__scores[name] = self.__scores[name] - 1
+                print(self.__scores)
             if self.__sudoku_uncovered == self.__sudoku_to_guess:
-                #sud = self.__sudoku_to_guess
                 self.__reset()
-                self.__notify_update('did solve the sudoku and win!')
+                self.__notify_update('did solve the sudoku')
         return r
 
     def get_current_state(self):
+        """Returns unsolved sudoku and leaderboard"""
         with self.__gm_lock:
-            #s = self.__uncovered
             s = self.__sudoku_uncovered
-        return s
+            l = self.__scores
+        return s,l
 
 class PlayerSession(Thread):
 
@@ -169,10 +175,10 @@ class PlayerSession(Thread):
             return self.__reply_err_not_joined()
         return self.__reply_set_new_sudoku(self.__game.set_new_sudoku(complexity))
 
-    def __guess_number(self,num,pos):
+    def __guess_number(self,num,pos,name):
         if not self.isJoined():
             return self.__reply_err_not_joined()
-        return self.__reply_guess_number(self.__game.guess_number(num,pos))
+        return self.__reply_guess_number(self.__game.guess_number(num,pos,name))
 
     def __current_state(self):
         if not self.isJoined():
@@ -226,11 +232,11 @@ class PlayerSession(Thread):
             rsp = self.__set_new_sudoku(complexity)
         elif message.startswith(REQ_GM_GUESS + MSG_FIELD_SEP):
             user_input = deserialize(payload)
-            num, pos = user_input
+            num, pos, name = user_input
             pos = [int(x) for x in pos]
             LOG.debug('Client %s:%d proposes number '\
                 '%s' % (self.__addr+(num,)))
-            rsp = self.__guess_number(num, pos)
+            rsp = self.__guess_number(num, pos, name)
         elif message.startswith(REQ_GM_GET_STATE + MSG_FIELD_SEP):
             LOG.debug('Client %s:%d asks for current uncovered sudoku '\
                 '' % self.__addr)
