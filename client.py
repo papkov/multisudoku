@@ -464,6 +464,7 @@ class Client():
         '''Get current sessions'''
         logging.debug( \
             'Requesting the current sessions ...')
+        
 
         rsp = self.__sync_request(REQ_GM_GET_SESSIONS)
         available_sessions = []
