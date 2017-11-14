@@ -364,9 +364,9 @@ class Client:
             self.notify('Server Notification: %s' % msg)
             state = self.get_current_progress()
 
+            # If GUI mode, update sudoku board
             if state and self.gui is not None:
                 self.gui.set_sudoku(state)
-
 
     def network_loop(self):
         """

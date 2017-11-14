@@ -29,7 +29,7 @@ class SudokuFrame(tk.Frame):
                                justify='center',
                                textvariable=sv,
                                validate='key',
-                               validatecommand=(self.register(self.validate_entry), '%P'),
+                               validatecommand=(self.register(self.validate_entry), '%P', '%s'),
                                state='readonly') for sv in self.box_values]
 
         # Fill the grid
@@ -46,9 +46,11 @@ class SudokuFrame(tk.Frame):
         self.client = client
         return True
 
-    def validate_entry(self, value):
+    def validate_entry(self, value, prior_value):
         allowed = (len(value) == 1 and value.isalnum()) or not value
-        LOG.debug("Validate %s: %s" % (value, allowed))
+        # Debug only new values
+        if value != prior_value:
+            LOG.debug("Validate %s: %s" % (value, allowed))
         if not allowed:
             self.bell()
         return allowed
@@ -79,28 +81,28 @@ class SudokuFrame(tk.Frame):
         LOG.debug("Get current state: %s" % cs)
         return cs
 
-    def generate_sudoku(self, valid_username=False, valid_address=False):
-        LOG.debug("Trying to generate new sudoku")
-        # If some information is not valid
-        if not valid_username:
-            LOG.debug("Generation is not allowed")
-            tkMessageBox.showinfo("Info", "Username should not be longer than "
-                                          "8 alphanumeric characters "
-                                          "(empty strings not allowed, "
-                                          "spaces not allowed)")
-            return
-
-        if not valid_address:
-            LOG.debug("Generation is not allowed")
-            tkMessageBox.showinfo("Info", "Please specify the correct server address"
-                                          "in format xxx.xxx.xxx.xxx:xxxx")
-            return
-
-        sudoku = su.get_sudoku()
-        unsolved = sum(sudoku["u"], [])
-        self.set_sudoku(unsolved)
-
-        LOG.debug("New sudoku was generated")
+    # def generate_sudoku(self, valid_username=False, valid_address=False):
+    #     LOG.debug("Trying to generate new sudoku")
+    #     # If some information is not valid
+    #     if not valid_username:
+    #         LOG.debug("Generation is not allowed")
+    #         tkMessageBox.showinfo("Info", "Username should not be longer than "
+    #                                       "8 alphanumeric characters "
+    #                                       "(empty strings not allowed, "
+    #                                       "spaces not allowed)")
+    #         return
+    #
+    #     if not valid_address:
+    #         LOG.debug("Generation is not allowed")
+    #         tkMessageBox.showinfo("Info", "Please specify the correct server address"
+    #                                       "in format xxx.xxx.xxx.xxx:xxxx")
+    #         return
+    #
+    #     sudoku = su.get_sudoku()
+    #     unsolved = sum(sudoku["u"], [])
+    #     self.set_sudoku(unsolved)
+    #
+    #     LOG.debug("New sudoku was generated")
 
     def set_sudoku(self, sudoku):
         LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
@@ -112,18 +114,15 @@ class SudokuFrame(tk.Frame):
         for i, b in enumerate(self.boxes):
             # Fix values that are not zero
             b.config(state="normal")
-            b.delete(0, 'end')
+            # b.delete(0, 'end')
             if sudoku[i]:
-                b.insert(0, sudoku[i])
+                self.box_values[i].set(sudoku[i])
+                # b.insert(0, sudoku[i])
                 b.config(state="readonly")
 
         # Track changes in sudoku
         self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
-
-
-
-
-                # tkMessageBox.showinfo("Info", "New sudoku was generated")
+        # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
 class LeaderboardFrame(tk.Frame):
@@ -208,7 +207,8 @@ class NotificationsFrame(tk.Frame):
         self.scrollbar_notifications.config(command=self.txt_notifications.yview)
 
     def add(self, text):
-        self.txt_notifications.insert(tk.END, text + "\n" )
+        self.txt_notifications.insert(tk.END, text + "\n")
+        self.txt_notifications.see(tk.END)
 
 
 class MenuFrame(tk.Frame):
