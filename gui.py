@@ -5,7 +5,7 @@ import logging
 import threading
 # from functools import partial
 import re
-import sudoku as su
+# import sudoku as su
 
 FORMAT = '%(asctime)-15s (%(threadName)-2s) %(levelname)s %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -13,6 +13,9 @@ LOG = logging.getLogger()
 
 
 class SudokuFrame(tk.Frame):
+    """
+    Class for sudoku board
+    """
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
@@ -43,10 +46,20 @@ class SudokuFrame(tk.Frame):
             b.grid(row=r, column=c, ipadx=0, padx=padx, ipady=4, pady=pady)
 
     def set_client(self, client):
+        """
+        Set client to control the board (render updates)
+        :param client: class Client
+        :return:
+        """
         self.client = client
-        return True
 
     def validate_entry(self, value, prior_value):
+        """
+        Validation for sudoku number box
+        :param value: str, new value of box
+        :param prior_value: str, prior value of box
+        :return: boolean, is new value allowed?
+        """
         allowed = (len(value) == 1 and value.isalnum()) or not value
         # Debug only new values
         if value != prior_value:
@@ -56,6 +69,11 @@ class SudokuFrame(tk.Frame):
         return allowed
 
     def report_changes(self, sv):
+        """
+        Trigger for sudoku changing
+        :param sv: StringVar, changed variable
+        :return: current state of sudoku
+        """
         v = sv.get()
         i = self.box_values.index(sv)
         r = i // 9
@@ -77,6 +95,9 @@ class SudokuFrame(tk.Frame):
         return self.get_current_state()
 
     def get_current_state(self):
+        """
+        :return: current state of sudoku
+        """
         cs = [b.get() if b.get() else 0 for b in self.boxes]
         LOG.debug("Get current state: %s" % cs)
         return cs
@@ -105,6 +126,11 @@ class SudokuFrame(tk.Frame):
     #     LOG.debug("New sudoku was generated")
 
     def set_sudoku(self, sudoku):
+        """
+        Render list sudoku on the board
+        :param sudoku: list, length 81
+        :return: None
+        """
         LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
 
         # Remove tracers for updating
@@ -126,6 +152,10 @@ class SudokuFrame(tk.Frame):
 
 
 class LeaderboardFrame(tk.Frame):
+    """
+    Class for leaderboard
+    tkinter Treeview
+    """
     def __init__(self, parent, players_limit=8, width=25):
         tk.Frame.__init__(self, parent, width=width)
         self.title = tk.Label(self,
@@ -164,6 +194,10 @@ class LeaderboardFrame(tk.Frame):
 
 
 class SessionsFrame(tk.Frame):
+    """
+    Class for available sessions
+    tkinter Listbox
+    """
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
@@ -181,12 +215,21 @@ class SessionsFrame(tk.Frame):
         self.scrollbar_sessions.config(command=self.list_sessions.yview)
 
     def fill(self, sessions):
+        """
+        Fill list with data from the server
+        :param sessions:
+        :return:
+        """
         self.list_sessions.delete(0, tk.END)
         for s in sessions:
             self.list_sessions.insert(tk.END, s)
 
 
 class NotificationsFrame(tk.Frame):
+    """
+    Class for notifications log
+    tkinter Text
+    """
     def __init__(self, parent, width=38):
         tk.Frame.__init__(self, parent)
 
@@ -212,6 +255,9 @@ class NotificationsFrame(tk.Frame):
 
 
 class MenuFrame(tk.Frame):
+    """
+    Class for total control
+    """
     def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
 
@@ -314,6 +360,12 @@ class MenuFrame(tk.Frame):
         self.frm_notifications.pack(side=tk.BOTTOM)
 
     def validate_username(self, username):
+        """
+        Validation command for username
+        (set valid_username inside)
+        :param username: str
+        :return: boolean, always True - all changes are allowed
+        """
         p = re.compile('^[0-9A-Za-z]{1,8}$')
         if not re.match(p, username):
             self.valid_username = False
@@ -326,6 +378,12 @@ class MenuFrame(tk.Frame):
         return True
 
     def validate_address(self, address):
+        """
+        Validation command for address
+        (set valid_address inside)
+        :param address: str
+        :return: boolean, always True - all changes are allowed
+        """
         p = re.compile('^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}$')
         if not re.match(p, address):
             self.valid_address = False
@@ -348,6 +406,10 @@ class MenuFrame(tk.Frame):
     #         LOG.error("btn_new is not exist")
 
     def connect(self):
+        """
+        Connect to the existing session
+        :return: None
+        """
         self.frm_leaderboard.fill({"Misha": 10, "Vlad": 10})
         self.frm_sessions.fill(["Session1", "Session2"])
 
@@ -429,16 +491,20 @@ class MenuFrame(tk.Frame):
             logging.debug("Server rejected name [%s]" % name)
             return False
 
-        # Check if there is an active game
+        # Check if there is an active game, render board
         state = self.client.get_current_progress()
         logging.debug("Current progress: %s" % state)
-
         if state:
             self.frm_sudoku.set_sudoku(state)
 
         return True
 
     def new_sudoku(self, complexity=5):
+        """
+        Request new sudoku from the server
+        :param complexity:
+        :return:
+        """
         if self.client.set_new_sudoku_to_guess(complexity):
             sud = self.client.get_current_progress()
             logging.debug("Received new sudoku %s" % len(sud))
@@ -447,13 +513,26 @@ class MenuFrame(tk.Frame):
             logging.error("Failed to receive new sudoku")
 
     def set_server(self, server):
+        """
+        Set server to control (run by Host button)
+        :param server: class Server
+        :return: None
+        """
         self.server = server
 
     def set_client(self, client):
+        """
+        Set client to control (Join to the server, UI triggers)
+        :param client: class Client
+        :return: None
+        """
         self.client = client
 
 
 class MainWindow(tk.Tk):
+    """
+    Main class
+    """
     def __init__(self):
         tk.Tk.__init__(self)
 
@@ -479,16 +558,36 @@ class MainWindow(tk.Tk):
         self.pn_main.add(self.pn_sudoku)
 
     def set_server(self, server):
+        """
+        Set server to control (run by Host button)
+        :param server: class Server
+        :return: None
+        """
         self.frm_menu.set_server(server)
 
     def set_client(self, client):
+        """
+        Set client to control (Join to the server, UI triggers)
+        :param client: class Client
+        :return: None
+        """
         self.frm_sudoku.set_client(client)
         self.frm_menu.set_client(client)
 
     def notify(self, notification):
+        """
+        Add a new notification to the notification textbox
+        :param notification:
+        :return: None
+        """
         return self.frm_menu.frm_notifications.add(notification)
 
     def set_sudoku(self, sudoku):
+        """
+        Set sudoku to the board
+        :param sudoku: list, 81 elements
+        :return: None
+        """
         self.frm_sudoku.set_sudoku(sudoku)
 
 
