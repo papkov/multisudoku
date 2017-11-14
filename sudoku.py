@@ -1,15 +1,9 @@
-import sudoku_maker as sm
-import random
+import edsudoku
 
 
-def get_sudoku(complexity=5):
-    solved = sm.make(9)
-    unsolved = []
-    for row in solved:
-        # Remove random numbers (with repetitions) from each row
-        remove = [random.randint(0, len(row)-1) for i in range(complexity)]
-        urow = [n if i not in remove else 0 for i, n in enumerate(row)]
-        unsolved.append(urow)
-
-    return {"s": solved, "u": unsolved}
-
+def get_sudoku():
+    puzzle = edsudoku.generate(3, 3)
+    solved = [[int(puzzle.solution[row, col]) for col in range(puzzle.cols)] for row in range(puzzle.rows)]
+    unsolved = [[int(puzzle.problem[row, col]) if puzzle.problem[row, col] != ' ' else 0
+                 for col in range(puzzle.cols)] for row in range(puzzle.rows)]
+    return {'s': solved, 'u': unsolved}
