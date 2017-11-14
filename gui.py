@@ -3,7 +3,7 @@ import ttk
 import tkMessageBox
 import logging
 import threading
-from functools import partial
+# from functools import partial
 import re
 import sudoku as su
 
@@ -16,11 +16,12 @@ class SudokuFrame(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
+        self.client = None
+
         # Create trackers for sudoku boxes
         self.box_values = [tk.StringVar() for i in range(81)]
-        for sv in self.box_values:
-            sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv))
-
+        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in
+                            self.box_values]
         # Generate a list of boxes
         self.boxes = [tk.Entry(self,
                                width=3,
@@ -41,6 +42,10 @@ class SudokuFrame(tk.Frame):
 
             b.grid(row=r, column=c, ipadx=0, padx=padx, ipady=4, pady=pady)
 
+    def set_client(self, client):
+        self.client = client
+        return True
+
     def validate_entry(self, value):
         allowed = (len(value) == 1 and value.isalnum()) or not value
         LOG.debug("Validate %s: %s" % (value, allowed))
@@ -49,7 +54,24 @@ class SudokuFrame(tk.Frame):
         return allowed
 
     def report_changes(self, sv):
-        LOG.debug("Value %s has changed" % sv)
+        v = sv.get()
+        i = self.box_values.index(sv)
+        r = i // 9
+        c = i % 9
+        LOG.debug("Value %s has changed: %s" % (sv, v))
+
+        if self.client is None:
+            logging.error("Client is not connected to SudokuFrame")
+            return self.get_current_state()
+
+        if self.client.guess_number("%s %s %s" % (v, r, c)):
+            logging.debug("Number confirmed")
+            self.boxes[i].config(state="readonly")
+        else:
+            logging.debug("Number rejected")
+            # TODO: do we need to clear this field immediately?
+            sv.set("")
+
         return self.get_current_state()
 
     def get_current_state(self):
@@ -82,6 +104,11 @@ class SudokuFrame(tk.Frame):
 
     def set_sudoku(self, sudoku):
         LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
+
+        # Remove tracers for updating
+        for i, sv in enumerate(self.box_values):
+            sv.trace_vdelete("w", self.box_tracers[i])
+
         for i, b in enumerate(self.boxes):
             # Fix values that are not zero
             b.config(state="normal")
@@ -90,7 +117,13 @@ class SudokuFrame(tk.Frame):
                 b.insert(0, sudoku[i])
                 b.config(state="readonly")
 
-        # tkMessageBox.showinfo("Info", "New sudoku was generated")
+        # Track changes in sudoku
+        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
+
+
+
+
+                # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
 class LeaderboardFrame(tk.Frame):
@@ -387,22 +420,29 @@ class MenuFrame(tk.Frame):
             LOG.debug("Failed to connect to server %s:%s" % (ip, port))
             return False
 
-        # TODO handle name rejection
+        # TODO handle name rejection (do we need that?)
         # Trying to set a name
         name = self.sv_username.get()
         if self.client.set_my_name(name):
             logging.debug("Your are connected to the game server by name [%s]" % name)
-            return True
         else:
             logging.debug("Server rejected name [%s]" % name)
             return False
 
+        # Check if there is an active game
+        state = self.client.get_current_progress()
+        logging.debug("Current progress: %s" % state)
+
+        if state:
+            self.frm_sudoku.set_sudoku(state)
+
+        return True
+
     def new_sudoku(self, complexity=5):
         if self.client.set_new_sudoku_to_guess(complexity):
             sud = self.client.get_current_progress()
-            print(sud)
-            logging.debug("Received new sudoku %sx%s" % (len(sud), len(sud[0])))
-            self.frm_sudoku.set_sudoku([item for sublist in sud for item in sublist])
+            logging.debug("Received new sudoku %s" % len(sud))
+            self.frm_sudoku.set_sudoku(sud)
         else:
             logging.error("Failed to receive new sudoku")
 
@@ -439,13 +479,17 @@ class MainWindow(tk.Tk):
         self.pn_main.add(self.pn_sudoku)
 
     def set_server(self, server):
-        return self.frm_menu.set_server(server)
+        self.frm_menu.set_server(server)
 
     def set_client(self, client):
-        return self.frm_menu.set_client(client)
+        self.frm_sudoku.set_client(client)
+        self.frm_menu.set_client(client)
 
     def notify(self, notification):
         return self.frm_menu.frm_notifications.add(notification)
+
+    def set_sudoku(self, sudoku):
+        self.frm_sudoku.set_sudoku(sudoku)
 
 
 if __name__ == "__main__":

@@ -121,17 +121,17 @@ class Client:
         pos2 = int(pos2)
         pos = [pos1, pos2]
         logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
-        payload = serialize((num,pos))
+        payload = serialize((num, pos))
         rsp = self.__sync_request(REQ_GM_GUESS, payload)
         if rsp is not None:
             head, payload = rsp
             if head == RSP_GM_GUESS:
                 if payload[0] == '1':
-                    logging.debug('Server confirmed %i on [%i][%i]' % (num,pos[0],pos[1]))
+                    logging.debug('Server confirmed %i on [%i][%i]' % (num, pos[0], pos[1]))
                     return True
                 else:
-                    logging.debug('Server rejected %i on [%i][%i]' % (num,pos[0],pos[1]))
-                    self.notify('Wrong number %i on [%i][%i]' % (num,pos[0],pos[1]))
+                    logging.debug('Server rejected %i on [%i][%i]' % (num, pos[0], pos[1]))
+                    self.notify('Wrong number %i on [%i][%i]' % (num, pos[0], pos[1]))
                     self.get_current_progress()
                     return False
             else:
@@ -161,8 +161,9 @@ class Client:
                         self.__state_change(self.__gm_states.NEED_SUDOKU)
             else:
                 logging.warn('Protocol error, unexpected control code!')
-                logging.warn('Expected [%s] received [%s]' % (RSP_GM_STATE,head))
-        return self.__current_progress
+                logging.warn('Expected [%s] received [%s]' % (RSP_GM_STATE, head))
+        # Return 1D list
+        return [item for sublist in self.__current_progress for item in sublist]
 
     def stop(self):
         """
@@ -361,7 +362,11 @@ class Client:
                 if msg == 'DIE!':
                     return
             self.notify('Server Notification: %s' % msg)
-            self.get_current_progress()
+            state = self.get_current_progress()
+
+            if state and self.gui is not None:
+                self.gui.set_sudoku(state)
+
 
     def network_loop(self):
         """
