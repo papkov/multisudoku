@@ -61,7 +61,10 @@ class Client:
         with self.__gm_state_lock:
             self.__gm_state = newstate
             logging.debug('Games state changed to [%d]' % newstate)
-            self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
+            if self.gui is None:
+                self.__io.output_sync(self.__gm_ui_input_prompts[newstate])
+            else:
+                self.gui.notify(self.__gm_ui_input_prompts[newstate])
 
     def set_my_name(self, name):
         """
@@ -77,11 +80,17 @@ class Client:
                 if payload[0] == '1':
                     logging.debug('Server confirmed player\'s name')
                     self.__my_name = name
-                    self.__io.output_sync('Joined the game!')
+                    if self.gui is None:
+                        self.__io.output_sync('You joined the game!')
+                    else:
+                        self.gui.notify('You joined the game!')
                     return True
                 else:
                     logging.debug('Server rejected player\'s name')
-                    self.__io.output_sync('Select different name!')
+                    if self.gui is None:
+                        self.__io.output_sync('Please select different name.')
+                    else:
+                        self.gui.notify('Please select different name.')
                     return False
             else:
                 logging.warn('Protocol error, unexpected control code!')
@@ -332,9 +341,9 @@ class Client:
         logging.info('Falling to game loop ...')
         self.__io.output_sync('Press Enter to initiate input, ')
         self.__io.output_sync('Type in your message (or Q to quit), hit Enter to submit')
-        while 1:
+        while True:
             user_input = self.__get_user_input()
-            print(user_input)
+            print user_input
             if user_input == 'Q':
                 break
             if self.__gm_state == self.__gm_states.NEED_NAME:

@@ -151,6 +151,30 @@ class SessionsFrame(tk.Frame):
             self.list_sessions.insert(tk.END, s)
 
 
+class NotificationsFrame(tk.Frame):
+    def __init__(self, parent, width=38):
+        tk.Frame.__init__(self, parent)
+
+        self.lbl_notifications = tk.Label(self, text="Notifications", font="Helvetica 12")
+        self.scrollbar_notifications = tk.Scrollbar(self)
+        self.txt_notifications = tk.Text(self,
+                                         height=5,
+                                         yscrollcommand=self.scrollbar_notifications.set,
+                                         wrap=tk.WORD,
+                                         padx=2,
+                                         pady=2,
+                                         spacing1=4,
+                                         width=width)
+
+        self.lbl_notifications.pack(side=tk.TOP, fill=tk.BOTH)
+        self.scrollbar_notifications.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt_notifications.pack(fill=tk.X)
+        self.scrollbar_notifications.config(command=self.txt_notifications.yview)
+
+    def add(self, text):
+        self.txt_notifications.insert(tk.END, text + "\n" )
+
+
 class MenuFrame(tk.Frame):
     def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
@@ -174,6 +198,7 @@ class MenuFrame(tk.Frame):
         self.frm_username = tk.Frame(self)  # username frame with label and textfield
         self.frm_address = tk.Frame(self)   # address frame with IP and port fields
         self.frm_sessions = SessionsFrame(self)
+        self.frm_notifications = NotificationsFrame(self)
         self.frm_host = tk.Frame(self)      # Host/Join buttons
 
         # VALIDATION
@@ -250,6 +275,7 @@ class MenuFrame(tk.Frame):
         self.frm_host.pack(side=tk.BOTTOM)
         self.frm_sessions.pack(side=tk.BOTTOM, fill=tk.X)
         self.frm_leaderboard.pack(side=tk.BOTTOM)
+        self.frm_notifications.pack(side=tk.BOTTOM)
 
     def validate_username(self, username):
         p = re.compile('^[0-9A-Za-z]{1,8}$')
@@ -324,8 +350,16 @@ class MenuFrame(tk.Frame):
         if not self.valid_address or self.server is None:
             LOG.debug("Failed to join a server")
             return False
+        # TODO: ability to restart client with different name
         if self.thread_client_network is not None:
             LOG.debug("Client is already running")
+            return False
+        if not self.valid_username:
+            LOG.debug("Username is invalid")
+            tkMessageBox.showinfo("Info", "Username should not be longer than "
+                                          "8 alphanumeric characters "
+                                          "(empty strings not allowed, "
+                                          "spaces not allowed)")
             return False
 
         # Address should be valid at this point
@@ -346,10 +380,20 @@ class MenuFrame(tk.Frame):
             self.thread_client_notifications.start()
             logging.debug("Client threads are running")
 
-            return True
         else:
             LOG.debug("Failed to connect to server %s:%s" % (ip, port))
             return False
+
+        # TODO handle name rejection
+        # Trying to set a name
+        name = self.sv_username.get()
+        if self.client.set_my_name(name):
+            logging.debug("Your are connected to the game server by name [%s]" % name)
+            return True
+        else:
+            logging.debug("Server rejected name [%s]" % name)
+            return False
+
 
     def set_server(self, server):
         self.server = server
@@ -388,6 +432,9 @@ class MainWindow(tk.Tk):
 
     def set_client(self, client):
         return self.frm_menu.set_client(client)
+
+    def notify(self, notification):
+        return self.frm_menu.frm_notifications.add(notification)
 
 
 if __name__ == "__main__":
