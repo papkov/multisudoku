@@ -416,6 +416,8 @@ class Client():
                 break
             if self.__gm_state == self.__gm_states.NEED_NAME:
                 self.set_my_name(user_input)
+            elif self.__gm_state == self.__gm_states.NEED_SESSION:
+                self.select_session(user_input)
             elif self.__gm_state == self.__gm_states.NEED_SUDOKU:
                 self.set_new_sudoku_to_guess(user_input)
             elif self.__gm_state == self.__gm_states.NEED_NUMBER:
