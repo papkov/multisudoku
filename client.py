@@ -121,7 +121,7 @@ class Client:
         pos2 = int(pos2)
         pos = [pos1, pos2]
         logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
-        payload = serialize((num, pos))
+        payload = serialize((num,pos, self.__my_name))
         rsp = self.__sync_request(REQ_GM_GUESS, payload)
         if rsp is not None:
             head, payload = rsp
@@ -140,7 +140,7 @@ class Client:
 
     def get_current_progress(self):
         """
-        Get current progress of word guessing
+        Get current progress of sudoku guessing and players leaderboard (tuple)
         """
 
         logging.debug('Requesting the current state ...')
@@ -148,13 +148,14 @@ class Client:
         if rsp is not None:
             head, payload = rsp
             if head == RSP_GM_STATE:
-                uncovered_sudoku = deserialize(payload)
+                uncovered_sudoku, leaderboard = deserialize(payload)
                 self.__current_progress = uncovered_sudoku
                 if len(uncovered_sudoku) > 0:
                     logging.debug('Current uncovered sudoku [%s] received' %
                                   [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
                     self.notify('Current progress: [%s]' %
                                           [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
+                    self.notify('Current leaderboard: [%s]' % str(leaderboard))
                     self.__state_change(self.__gm_states.NEED_NUMBER)
                 else:
                     if self.__gm_state != self.__gm_states.NEED_SUDOKU:
