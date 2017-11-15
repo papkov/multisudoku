@@ -164,7 +164,7 @@ class Client:
                 logging.warn('Protocol error, unexpected control code!')
                 logging.warn('Expected [%s] received [%s]' % (RSP_GM_STATE, head))
         # Return 1D list
-        return [item for sublist in self.__current_progress for item in sublist]
+        return [item for sublist in self.__current_progress for item in sublist], leaderboard
 
     def stop(self):
         """
@@ -363,11 +363,13 @@ class Client:
                 if msg == 'DIE!':
                     return
             self.notify('Server Notification: %s' % msg)
-            state = self.get_current_progress()
+            state, lb = self.get_current_progress()
 
             # If GUI mode, update sudoku board
             if state and self.gui is not None:
                 self.gui.set_sudoku(state)
+                self.gui.set_leaderboard(lb)
+
 
     def network_loop(self):
         """

@@ -20,6 +20,7 @@ class SudokuFrame(tk.Frame):
         tk.Frame.__init__(self, parent)
 
         self.client = None
+        self.lb = None
 
         # Create trackers for sudoku boxes
         self.box_values = [tk.StringVar() for i in range(81)]
@@ -52,6 +53,14 @@ class SudokuFrame(tk.Frame):
         :return:
         """
         self.client = client
+
+    def set_leaderboard(self, lb):
+        """
+        Set leaderboard to update after each try
+        :param lb: LeaderboardFrame
+        :return: None
+        """
+        self.lb = lb
 
     def validate_entry(self, value, prior_value):
         """
@@ -92,6 +101,9 @@ class SudokuFrame(tk.Frame):
             # TODO: do we need to clear this field immediately?
             sv.set("")
 
+        state, lb = self.client.get_current_progress()
+
+        self.lb.fill(lb)
         return self.get_current_state()
 
     def get_current_state(self):
@@ -283,6 +295,9 @@ class MenuFrame(tk.Frame):
         self.frm_notifications = NotificationsFrame(self)
         self.frm_host = tk.Frame(self)      # Host/Join buttons
 
+        # Set control to update
+        self.frm_sudoku.set_leaderboard(self.frm_leaderboard)
+
         # VALIDATION
         self.valid_username = False
         self.valid_address = False
@@ -353,7 +368,7 @@ class MenuFrame(tk.Frame):
         self.frm_username.pack(side=tk.BOTTOM)
         self.frm_address.pack(side=tk.BOTTOM)
         self.btn_new.pack(side=tk.BOTTOM)
-        self.btn_connect.pack(side=tk.BOTTOM)
+        # self.btn_connect.pack(side=tk.BOTTOM)
         self.frm_host.pack(side=tk.BOTTOM)
         self.frm_sessions.pack(side=tk.BOTTOM, fill=tk.X)
         self.frm_leaderboard.pack(side=tk.BOTTOM)
@@ -492,10 +507,11 @@ class MenuFrame(tk.Frame):
             return False
 
         # Check if there is an active game, render board
-        state = self.client.get_current_progress()
+        state, lb = self.client.get_current_progress()
         logging.debug("Current progress: %s" % state)
         if state:
             self.frm_sudoku.set_sudoku(state)
+            self.frm_leaderboard.fill(lb)
 
         return True
 
@@ -506,9 +522,10 @@ class MenuFrame(tk.Frame):
         :return:
         """
         if self.client.set_new_sudoku_to_guess(complexity):
-            sud = self.client.get_current_progress()
+            state, lb = self.client.get_current_progress()
             logging.debug("Received new sudoku %s" % len(sud))
-            self.frm_sudoku.set_sudoku(sud)
+            self.frm_sudoku.set_sudoku(state)
+            self.frm_leaderboard.fill(lb)
         else:
             logging.error("Failed to receive new sudoku")
 
@@ -589,6 +606,14 @@ class MainWindow(tk.Tk):
         :return: None
         """
         self.frm_sudoku.set_sudoku(sudoku)
+
+    def set_leaderboard(self, lb):
+        """
+        Set leaderboard
+        :param lb: leaderboard, dict name: points
+        :return: None
+        """
+        self.frm_menu.frm_leaderboard.fill(lb)
 
 
 if __name__ == "__main__":
