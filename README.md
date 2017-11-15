@@ -24,19 +24,6 @@ To start the application, run the file `main.py`.
 
 To open a new game window, run `main.py`.
 
-![A newly created game window](## Setup user manual
-To use the application successfully, run the following commands:
-
-`sudo apt-get install python-tk`
-
-`pip install -r requirements`
-
-To start the application, run the file `main.py`.
-
-## Interface user manual
-
-To open a new game window, run `main.py`.
-
 ![A newly created game window](https://raw.githubusercontent.com/papkov/multisudoku/master/pics/new_window.png)
 
 To act as a server, select a username and click 'Host'.
