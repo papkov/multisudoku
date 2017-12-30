@@ -10,6 +10,12 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
 LOG = logging.getLogger()
 
+from SimpleXMLRPCServer import SimpleXMLRPCServer
+from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
+
+class MyServerRequestHandler(SimpleXMLRPCRequestHandler):
+    rpc_paths = ('/RPC2',)
+
 
 class Game:
     def __init__(self):
@@ -18,6 +24,18 @@ class Game:
         self.__players = []
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
+
+    def check_name(self,name):
+        # Function for RPC
+        # (copy from self.join, added PlayerSession)
+        players = map(lambda x: x.getName(), self.__players)
+        if name in players:
+            return False
+        # ??? do we need PlayerSession?
+        client_session = PlayerSession(name,self)
+        self.__players.append(client_session)
+        self.__notify_update('joined game!')
+        return True
 
     def __notify_update(self, message):
         caller = currentThread().getName()
@@ -40,6 +58,7 @@ class Game:
         return True
 
     def set_new_sudoku(self, complexity):
+        # Function for RPC
         r = False
         with self.__gm_lock:
             if len(self.__sudoku_to_guess) <= 0:
@@ -51,13 +70,11 @@ class Game:
         return r
 
     def __reset(self):
-        # self.__to_guess = ''
-        # self.__uncovered = ''
-        # self.__ok_letters = []
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
 
     def guess_number(self, num, pos,name):
+        # Function for RPC
         with self.__gm_lock:
             r = False
             if num == self.__sudoku_to_guess[pos[0]][pos[1]]:
@@ -79,7 +96,9 @@ class Game:
         self.__scores[name] = 0
 
     def get_current_state(self):
-        """Returns unsolved sudoku and leaderboard"""
+        """
+        Returns unsolved sudoku and leaderboard
+        """
         with self.__gm_lock:
             # s = self.__uncovered
             s = self.__sudoku_uncovered
@@ -88,13 +107,13 @@ class Game:
 
 
 class PlayerSession(Thread):
-    def __init__(self, soc, soc_addr, game):
+    def __init__(self, game, name):
         Thread.__init__(self)
-        self.__s = soc
-        self.__addr = soc_addr
+        #self.__s = soc
+        #self.__addr = soc_addr
         self.__send_lock = Lock()
         self.__game = game
-        self.__name = None
+        self.__name = name
 
     def getName(self):
         return self.__name
@@ -232,9 +251,20 @@ class PlayerSession(Thread):
 
 
 class GameServer:
-    def __init__(self, game):
+    def __init__(self, game,sock_addr):
         self.__clients = []
         self.__game = game
+
+        self.server_sock = sock_addr
+        # Create XML_server
+        self.server = SimpleXMLRPCServer(self.server_sock, requestHandler=MyServerRequestHandler)
+        LOG.debug('Server started')
+        self.server.register_introspection_functions()
+        # Register all functions
+        # Register server-side functions into RPC middleware
+        self.server.register_instance(game)
+        #self.server.register_function(function_name)
+
 
     def listen(self, sock_addr, backlog=1):
         self.__sock_addr = sock_addr
@@ -245,7 +275,7 @@ class GameServer:
         LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
 
     def loop(self):
-        LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
+        '''LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
         clients = []
         client_socket = None
 
@@ -263,12 +293,20 @@ class GameServer:
             if client_socket is not None:
                 client_socket.close()
             self.__s.close()
-        map(lambda x: x.join(), clients)
+        map(lambda x: x.join(), clients)'''
+        try:
+            self.server.serve_forever()
+        except KeyboardInterrupt:
+            print 'Ctrl+C issued, terminating ...'
+        finally:
+            self.server.shutdown()  # Stop the serve-forever loop
+            self.server.server_close()  # Close the sockets
+        print 'Terminating ...'
 
 
 if __name__ == '__main__':
     game = Game()
-    server = GameServer(game)
-    server.listen(('127.0.0.1', 7777))
+    server = GameServer(game,('127.0.0.1', 7777))
+    #server.listen(('127.0.0.1', 7777))
     server.loop()
     LOG.info('Terminating...')
