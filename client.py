@@ -54,6 +54,9 @@ class Client:
         self.__my_name = None
         self.__current_progress = []
 
+        # RPC proxy
+        self.__proxy = None
+
         # GUI to control
         self.gui = None
 
@@ -123,13 +126,13 @@ class Client:
         """
         Guess the number
         """
-
+        logging.debug("Guess number: incoming string %s" % input_str)
         num, pos1, pos2 = input_str.split(' ')
         num = int(num)
         pos1 = int(pos1)
         pos2 = int(pos2)
         pos = [pos1, pos2]
-        logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
+        logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num, pos1, pos2))
         #payload = serialize((num,pos, self.__my_name))
         #rsp = self.__sync_request(REQ_GM_GUESS, payload)
         with self.__send_lock:
@@ -209,6 +212,7 @@ class Client:
         """
         try:
             self.__proxy = ServerProxy("http://%s:%d" % srv_addr)
+            self.__proxy.__allow_none = True
             logging.info('Connected to Game server at %s:%d' % srv_addr)
             self.__state_change(self.__gm_states.NEED_NAME)
             methods = filter(lambda x: 'system.' not in x, self.__proxy.system.listMethods())

@@ -21,11 +21,11 @@ class SudokuFrame(tk.Frame):
 
         self.client = None
         self.lb = None
+        self.lock = threading.Lock()
 
         # Create trackers for sudoku boxes
         self.box_values = [tk.StringVar() for i in range(81)]
-        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in
-                            self.box_values]
+        self.box_tracers = []
         # Generate a list of boxes
         self.boxes = [tk.Entry(self,
                                width=3,
@@ -34,7 +34,7 @@ class SudokuFrame(tk.Frame):
                                textvariable=sv,
                                validate='key',
                                validatecommand=(self.register(self.validate_entry), '%P', '%s'),
-                               state='readonly') for sv in self.box_values]
+                               state=tk.DISABLED) for sv in self.box_values]
 
         # Fill the grid
         for i, b in enumerate(self.boxes):
@@ -69,7 +69,7 @@ class SudokuFrame(tk.Frame):
         :param prior_value: str, prior value of box
         :return: boolean, is new value allowed?
         """
-        allowed = (len(value) == 1 and value.isalnum()) or not value
+        allowed = (len(value) == 1 and value.isdigit()) or not value
         # Debug only new values
         if value != prior_value:
             LOG.debug("Validate %s: %s" % (value, allowed))
@@ -83,28 +83,29 @@ class SudokuFrame(tk.Frame):
         :param sv: StringVar, changed variable
         :return: current state of sudoku
         """
-        v = sv.get()
-        i = self.box_values.index(sv)
-        r = i // 9
-        c = i % 9
-        LOG.debug("Value %s has changed: %s" % (sv, v))
+        with self.lock:
+            v = sv.get()
+            i = self.box_values.index(sv)
+            r = i // 9
+            c = i % 9
+            LOG.debug("Value %s has changed: %s" % (sv, v))
 
-        if self.client is None:
-            logging.error("Client is not connected to SudokuFrame")
+            if self.client is None:
+                logging.error("Client is not connected to SudokuFrame")
+                return self.get_current_state()
+
+            if self.client.guess_number("%s %s %s" % (v, r, c)):
+                logging.debug("Number confirmed")
+                self.boxes[i].config(state="readonly")
+            else:
+                logging.debug("Number rejected")
+                # TODO: do we need to clear this field immediately?
+                sv.set("")
+
+            state, lb = self.client.get_current_progress()
+
+            self.lb.fill(lb)
             return self.get_current_state()
-
-        if self.client.guess_number("%s %s %s" % (v, r, c)):
-            logging.debug("Number confirmed")
-            self.boxes[i].config(state="readonly")
-        else:
-            logging.debug("Number rejected")
-            # TODO: do we need to clear this field immediately?
-            sv.set("")
-
-        state, lb = self.client.get_current_progress()
-
-        self.lb.fill(lb)
-        return self.get_current_state()
 
     def get_current_state(self):
         """
@@ -145,22 +146,25 @@ class SudokuFrame(tk.Frame):
         """
         LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
 
-        # Remove tracers for updating
-        for i, sv in enumerate(self.box_values):
-            sv.trace_vdelete("w", self.box_tracers[i])
+        with self.lock:
+            # Remove tracers for updating
+            if self.box_tracers:
+                for i, sv in enumerate(self.box_values):
+                    # print self.box_tracers[i]
+                    sv.trace_vdelete("w", self.box_tracers[i])
 
-        for i, b in enumerate(self.boxes):
-            # Fix values that are not zero
-            b.config(state="normal")
-            # b.delete(0, 'end')
-            if sudoku[i]:
-                self.box_values[i].set(sudoku[i])
-                # b.insert(0, sudoku[i])
-                b.config(state="readonly")
+            for i, b in enumerate(self.boxes):
+                # Fix values that are not zero
+                b.config(state=tk.NORMAL)
+                # b.delete(0, 'end')
+                if sudoku[i]:
+                    self.box_values[i].set(sudoku[i])
+                    # b.insert(0, sudoku[i])
+                    b.config(state=tk.DISABLED)
 
-        # Track changes in sudoku
-        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
-        # tkMessageBox.showinfo("Info", "New sudoku was generated")
+            # Track changes in sudoku
+            self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
+            # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
 class LeaderboardFrame(tk.Frame):
