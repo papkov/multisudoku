@@ -1,6 +1,8 @@
 from threading import Thread, Lock, currentThread
-from socket import AF_INET, SOCK_STREAM, socket
+from socket import AF_INET, SOCK_STREAM, socket, SOCK_DGRAM
+from socket import IPPROTO_IP, IP_MULTICAST_TTL
 from socket import error as soc_err
+import struct
 
 from protocol import *
 from sudoku import *
@@ -12,6 +14,11 @@ LOG = logging.getLogger()
 
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
+
+DEFAULT_SERVER_PORT = 5007
+DEFAULT_SERVER_INET_ADDR = '225.0.0.1'
+bind_addr = '0.0.0.0'
+DEFAULT_RCV_BUFFSIZE = 1024
 
 class MyServerRequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
@@ -25,23 +32,36 @@ class Game:
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
 
+        # broadcast sender socket
+        self.sender_sock = socket(AF_INET, SOCK_DGRAM)
+        ttl = struct.pack('b', 1)
+        self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
+
+    def send_to_all(self, name, message):
+        if message != 'EXIT':
+            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_SERVER_INET_ADDR, DEFAULT_SERVER_PORT))
+        else:
+            self.sender_sock.close()
+
     def check_name(self,name):
         # Function for RPC
         # (copy from self.join, added PlayerSession)
-        players = map(lambda x: x.getName(), self.__players)
-        if name in players:
+        #players = map(lambda x: x.getName(), self.__players)
+        if name in self.__players:
             return False
         # ??? do we need PlayerSession?
-        client_session = PlayerSession(name,self)
-        self.__players.append(client_session)
-        self.__notify_update('joined game!')
+        #client_session = PlayerSession(name,self)
+        self.__players.append(name)
+        self.send_to_all(name,'joined the game!')
+        #self.__notify_update('joined game!')
         return True
 
-    def __notify_update(self, message):
-        caller = currentThread().getName()
-        joined = filter(lambda x: x.is_joined(), self.__players)
-        map(lambda x: x.notify('%s %s' % (caller, message)), joined)
+    #def __notify_update(self, message):
+    #    caller = currentThread().getName()
+    #    joined = filter(lambda x: x.is_joined(), self.__players)
+    #    map(lambda x: x.notify('%s %s' % (caller, message)), joined)
 
+    #can delete
     def remove_me(self):
         caller = currentThread()
         if caller in self.__players:
@@ -49,6 +69,7 @@ class Game:
             logging.info('%s left game' % caller.getName())
             self.__notify_update('left game')
 
+    #can delete
     def join(self, name, client_session):
         players = map(lambda x: x.getName(),self.__players)
         if name in players:
@@ -57,7 +78,7 @@ class Game:
         self.__notify_update('joined game!')
         return True
 
-    def set_new_sudoku(self, complexity):
+    def set_new_sudoku(self, name, complexity):
         # Function for RPC
         r = False
         with self.__gm_lock:
@@ -65,7 +86,7 @@ class Game:
                 sudoku = get_sudoku(int(complexity))
                 self.__sudoku_to_guess = sudoku["s"]
                 self.__sudoku_uncovered = sudoku["u"]
-                self.__notify_update('did set new sudoku to guess!')
+                self.send_to_all(name, 'did set new sudoku to guess!')
                 r = True
         return r
 
@@ -79,7 +100,7 @@ class Game:
             r = False
             if num == self.__sudoku_to_guess[pos[0]][pos[1]]:
                 self.__sudoku_uncovered[pos[0]][pos[1]] = num
-                self.__notify_update('did guess %i in position [%i][%i]!' % (num,pos[0],pos[1]))
+                self.send_to_all(name, 'did guess %i in position [%i][%i]!' % (num,pos[0],pos[1]))
                 r = True
                 self.__scores[name] = self.__scores[name] + 1
                 logging.debug(self.__scores)
@@ -89,7 +110,7 @@ class Game:
             if self.__sudoku_uncovered == self.__sudoku_to_guess:
                 # sud = self.__sudoku_to_guess
                 self.__reset()
-                self.__notify_update('did solve the sudoku')
+                self.send_to_all(name, 'did solve the sudoku')
         return r
 
     def set_name(self, name):
@@ -106,6 +127,7 @@ class Game:
         return s, l
 
 
+#can delete
 class PlayerSession(Thread):
     def __init__(self, game, name):
         Thread.__init__(self)
@@ -265,7 +287,6 @@ class GameServer:
         self.server.register_instance(game)
         #self.server.register_function(function_name)
 
-
     def listen(self, sock_addr, backlog=1):
         self.__sock_addr = sock_addr
         self.__backlog = backlog
@@ -273,6 +294,7 @@ class GameServer:
         self.__s.bind(self.__sock_addr)
         self.__s.listen(self.__backlog)
         LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
+
 
     def loop(self):
         '''LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )

@@ -1,6 +1,7 @@
 from tempfile import mktemp
 from threading import Thread, Condition, Lock
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
+from socket import inet_aton, IP_ADD_MEMBERSHIP,SOL_SOCKET, SO_REUSEADDR, SOCK_DGRAM, IPPROTO_IP
 from socket import error as soc_err
 
 from protocol import *
@@ -15,6 +16,10 @@ logging.basicConfig(filename=logfile,
                     level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
 
+DEFAULT_SERVER_PORT = 5007
+DEFAULT_SERVER_INET_ADDR = '225.0.0.1'
+bind_addr = '0.0.0.0'
+DEFAULT_RCV_BUFFSIZE = 1024
 
 class Client:
 
@@ -51,6 +56,13 @@ class Client:
 
         # GUI to control
         self.gui = None
+
+        # broadcast receiver socket
+        self.receiver_sock = socket(AF_INET, SOCK_DGRAM)
+        membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
+        self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
+        self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.receiver_sock.bind((bind_addr, DEFAULT_SERVER_PORT))
 
     def set_gui(self, gui):
         self.gui = gui
@@ -93,7 +105,7 @@ class Client:
         #payload = serialize(complexity)
         logging.debug('Requesting the server to the new sudoku to guess with complexity %s ...' % complexity)
         #rsp = self.__sync_request(REQ_GM_SET_SUDOKU, payload)
-        rsp = self.__proxy.set_new_sudoku(complexity)
+        rsp = self.__proxy.set_new_sudoku(self.__my_name, complexity)
         if rsp is not None:
             if rsp:
                 logging.debug('Server confirmed complexity settings: %s' % complexity)
@@ -399,6 +411,22 @@ class Client:
         else:
             self.gui.notify(text)
 
+    def receiver_loop(self):
+        logging.info('Falling to receiver loop ...')
+        try:
+            while True:
+                try:
+                    data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    #message = data.split()
+                    print('Received message: ', data)
+                except socket.timeout:
+                    print('timed out, no more responses')
+                    break
+        finally:
+            self.receiver_sock.shutdown(2)
+            self.receiver_sock.close()
+
+
 
 if __name__ == '__main__':
     srv_addr = ('127.0.0.1', 7777)
@@ -412,12 +440,12 @@ if __name__ == '__main__':
     #if client.connect(srv_addr):
     if client.connect_proxy(srv_addr):
 
-        network_thread = Thread(name='NetworkThread',
-                                target=client.network_loop)
-        notifications_thread = Thread(name='NotificationsThread',
-                                      target=client.notifications_loop)
-        network_thread.start()
-        notifications_thread.start()
+        #network_thread = Thread(name='NetworkThread',target=client.network_loop)
+        #notifications_thread = Thread(name='NotificationsThread',target=client.notifications_loop)
+        #network_thread.start()
+        #notifications_thread.start()
+        receiver_thread = Thread(name='ReceiverThread',target=client.receiver_loop)
+        receiver_thread.start()
 
         try:
             client.game_loop()
@@ -426,7 +454,8 @@ if __name__ == '__main__':
         finally:
             client.stop()
 
-        network_thread.join()
-        notifications_thread.join()
+        #network_thread.join()
+        #notifications_thread.join()
+        receiver_thread.join()
 
     logging.info('Terminating')

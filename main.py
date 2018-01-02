@@ -15,15 +15,15 @@ if __name__ == "__main__":
     ui = gui.MainWindow()
     # Set icon
     # https://cdn2.iconfinder.com/data/icons/games-and-sports-vol-2/32/Game_sports_calculate_counting_crosswords_numbers_sudoku-512.png
-    ui.tk.call('wm',
-                'iconphoto',
-                ui._w,
-                Image("photo", file="icon.png"))
+    #ui.tk.call('wm',
+    #            'iconphoto',
+    #            ui._w,
+    #            Image("photo", file="icon.png"))
     # Create game
     game = s.Game()
 
     # Create server with game
-    server = s.GameServer(game)
+    server = s.GameServer(game,(('127.0.0.1', 7777)))
 
     # Create client
     # TODO: remove syncIO dependency for GUI
