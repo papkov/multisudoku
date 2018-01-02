@@ -17,7 +17,7 @@ logging.basicConfig(filename=logfile,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
 
 DEFAULT_SERVER_PORT = 5007
-DEFAULT_SERVER_INET_ADDR = '225.0.0.1'
+DEFAULT_SERVER_INET_ADDR = '224.0.0.2'
 bind_addr = '0.0.0.0'
 DEFAULT_RCV_BUFFSIZE = 1024
 
@@ -85,7 +85,8 @@ class Client:
         #payload = serialize(name)
         logging.debug('Requesting the server to set player\'s name to %s ...' % name)
         #rsp = self.__sync_request(REQ_GM_SET_NAME, payload)
-        rsp = self.__proxy.check_name(name)
+        with self.__send_lock:
+            rsp = self.__proxy.check_name(name)
         if rsp is not None:
             if rsp:
                 logging.debug('Server confirmed player\'s name')
@@ -105,7 +106,8 @@ class Client:
         #payload = serialize(complexity)
         logging.debug('Requesting the server to the new sudoku to guess with complexity %s ...' % complexity)
         #rsp = self.__sync_request(REQ_GM_SET_SUDOKU, payload)
-        rsp = self.__proxy.set_new_sudoku(self.__my_name, complexity)
+        with self.__send_lock:
+            rsp = self.__proxy.set_new_sudoku(self.__my_name, complexity)
         if rsp is not None:
             if rsp:
                 logging.debug('Server confirmed complexity settings: %s' % complexity)
@@ -130,7 +132,8 @@ class Client:
         logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
         #payload = serialize((num,pos, self.__my_name))
         #rsp = self.__sync_request(REQ_GM_GUESS, payload)
-        rsp = self.__proxy.guess_number(num,pos, self.__my_name)
+        with self.__send_lock:
+            rsp = self.__proxy.guess_number(num,pos, self.__my_name)
         if rsp is not None:
             if rsp:
                 logging.debug('Server confirmed %i on [%i][%i]' % (num, pos[0], pos[1]))
@@ -149,7 +152,8 @@ class Client:
         logging.debug('Requesting the current state ...')
         #rsp = self.__sync_request(REQ_GM_GET_STATE)
         uncovered_sudoku, leaderboard = None, None
-        rsp = self.__proxy.get_current_state()
+        with self.__send_lock:
+            rsp = self.__proxy.get_current_state()
         if rsp is not None:
             #head, payload = rsp
             #if head == RSP_GM_STATE:
@@ -416,13 +420,25 @@ class Client:
         try:
             while True:
                 try:
+                    #logging.debug("Entered")
                     data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
                     #message = data.split()
-                    print('Received message: ', data)
-                except socket.timeout:
-                    print('timed out, no more responses')
+                    #logging.info('Received message type: %s', type(data))
+                    #logging.info('Received message: %s', data)
+                    #print('Received message: ', data)
+                    self.notify('Server Notification: %s' % data)
+                    state, lb = self.get_current_progress()
+
+                    # If GUI mode, update sudoku board
+                    if state and self.gui is not None:
+                        self.gui.set_sudoku(state)
+                        self.gui.set_leaderboard(lb)
+                except:
+                        #socket.timeout:
+                    print 'timed out, no more responses'
                     break
         finally:
+            logging.debug('Shutting socket down')
             self.receiver_sock.shutdown(2)
             self.receiver_sock.close()
 

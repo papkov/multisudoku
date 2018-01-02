@@ -280,6 +280,7 @@ class MenuFrame(tk.Frame):
         self.thread_server = None
         self.thread_client_notifications = None
         self.thread_client_network = None
+        self.thread_receiver = None
 
         self.title = tk.Label(self,
                               text="Multiplayer sudoku\nv0.0.1",
@@ -445,7 +446,7 @@ class MenuFrame(tk.Frame):
         ip, port = self.ent_address.get().split(":")
 
         LOG.debug("Hosting a server: %s:%s" % (ip, port))
-        self.server.listen((ip, int(port)))
+        #self.server.listen((ip, int(port)))
         self.thread_server = threading.Thread(target=self.server.loop, name="server")
 
         LOG.debug("Starting a server thread")
@@ -464,7 +465,10 @@ class MenuFrame(tk.Frame):
             LOG.debug("Failed to join a server")
             return False
         # TODO: ability to restart client with different name
-        if self.thread_client_network is not None:
+        #if self.thread_client_network is not None:
+        #    LOG.debug("Client is already running")
+         #   return False
+        if self.thread_receiver is not None:
             LOG.debug("Client is already running")
             return False
         if not self.valid_username:
@@ -479,18 +483,20 @@ class MenuFrame(tk.Frame):
         ip, port = self.ent_address.get().split(":")
         server_address = (ip, int(port))
 
-        if self.client.connect(server_address):
+        #if self.client.connect(server_address):
+        if self.client.connect_proxy(server_address):
             logging.debug("Client connected to %s:%s" % (ip, port))
 
             # Set and start client threads
-            self.thread_client_network = threading.Thread(name='client_network',
-                                                          target=self.client.network_loop)
-            self.thread_client_notifications = threading.Thread(name='client_notifications',
-                                                                target=self.client.notifications_loop)
-            self.thread_client_notifications.daemon = True
-            self.thread_client_network.daemon = True
-            self.thread_client_network.start()
-            self.thread_client_notifications.start()
+            self.thread_receiver = threading.Thread(name='ReceiverThread',target=self.client.receiver_loop)
+            self.thread_receiver.daemon = True
+            self.thread_receiver.start()
+            #self.thread_client_network = threading.Thread(name='client_network',target=self.client.network_loop)
+            #self.thread_client_notifications = threading.Thread(name='client_notifications',target=self.client.notifications_loop)
+            #self.thread_client_notifications.daemon = True
+            #self.thread_client_network.daemon = True
+            #self.thread_client_network.start()
+            #self.thread_client_notifications.start()
             logging.debug("Client threads are running")
 
         else:
@@ -523,7 +529,7 @@ class MenuFrame(tk.Frame):
         """
         if self.client.set_new_sudoku_to_guess(complexity):
             state, lb = self.client.get_current_progress()
-            logging.debug("Received new sudoku %s" % len(sud))
+            logging.debug("Received new sudoku %s" % len(state))
             self.frm_sudoku.set_sudoku(state)
             self.frm_leaderboard.fill(lb)
         else:

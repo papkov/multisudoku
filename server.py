@@ -16,7 +16,7 @@ from SimpleXMLRPCServer import SimpleXMLRPCServer
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
 
 DEFAULT_SERVER_PORT = 5007
-DEFAULT_SERVER_INET_ADDR = '225.0.0.1'
+DEFAULT_SERVER_INET_ADDR = '224.0.0.2'
 bind_addr = '0.0.0.0'
 DEFAULT_RCV_BUFFSIZE = 1024
 
@@ -53,6 +53,7 @@ class Game:
         #client_session = PlayerSession(name,self)
         self.__players.append(name)
         self.send_to_all(name,'joined the game!')
+        self.__scores[name] = 0
         #self.__notify_update('joined game!')
         return True
 
