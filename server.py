@@ -7,18 +7,14 @@ import struct
 from protocol import *
 from sudoku import *
 
-import logging
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s (%(threadName)-2s) %(message)s')
-LOG = logging.getLogger()
-
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
 
-DEFAULT_SERVER_PORT = 5007
-DEFAULT_SERVER_INET_ADDR = '224.0.0.2'
-bind_addr = '0.0.0.0'
-DEFAULT_RCV_BUFFSIZE = 1024
+import logging
+
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s (%(threadName)-2s) %(message)s')
+LOG = logging.getLogger()
 
 class MyServerRequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
@@ -38,12 +34,13 @@ class Game:
         self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
 
     def send_to_all(self, name, message):
+        logging.debug("Broadcast notification: %s - %s" % (name, message))
         if message != 'EXIT':
             self.sender_sock.sendto(name + ' ' + message, (DEFAULT_SERVER_INET_ADDR, DEFAULT_SERVER_PORT))
         else:
             self.sender_sock.close()
 
-    def check_name(self,name):
+    def check_name(self, name):
         # Function for RPC
         # (copy from self.join, added PlayerSession)
         #players = map(lambda x: x.getName(), self.__players)
@@ -52,7 +49,7 @@ class Game:
         # ??? do we need PlayerSession?
         #client_session = PlayerSession(name,self)
         self.__players.append(name)
-        self.send_to_all(name,'joined the game!')
+        self.send_to_all(name, 'joined the game!')
         self.__scores[name] = 0
         #self.__notify_update('joined game!')
         return True
@@ -278,6 +275,7 @@ class GameServer:
         self.__clients = []
         self.__game = game
         self.server_sock = sock_addr
+        self.server = None
 
     def listen(self):
         # Create XML_server
@@ -286,7 +284,7 @@ class GameServer:
         self.server.register_introspection_functions()
         # Register all functions
         # Register server-side functions into RPC middleware
-        self.server.register_instance(game)
+        self.server.register_instance(self.__game)
         # self.server.register_function(function_name)
 
     # def listen(self, sock_addr, backlog=1):

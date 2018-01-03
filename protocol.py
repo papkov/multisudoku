@@ -26,6 +26,12 @@ MSG_SEP = ';'
 
 DEFAULT_RCV_BUFSIZE = 1
 
+# Broadcast parameters
+DEFAULT_SERVER_PORT = 5007
+DEFAULT_SERVER_INET_ADDR = '224.0.0.2'
+bind_addr = '0.0.0.0'
+DEFAULT_RCV_BUFFSIZE = 1024
+
 
 def serialize(msg):
     #return encodestring(msg)

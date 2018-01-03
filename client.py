@@ -16,10 +16,6 @@ logging.basicConfig(filename=logfile,
                     level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
 
-DEFAULT_SERVER_PORT = 5007
-DEFAULT_SERVER_INET_ADDR = '224.0.0.2'
-bind_addr = '0.0.0.0'
-DEFAULT_RCV_BUFFSIZE = 1024
 
 class Client:
 
@@ -430,6 +426,7 @@ class Client:
                     #logging.info('Received message type: %s', type(data))
                     #logging.info('Received message: %s', data)
                     #print('Received message: ', data)
+                    logging.debug("Received broadcast notification")
                     self.notify('Server Notification: %s' % data)
                     state, lb = self.get_current_progress()
 
@@ -439,7 +436,7 @@ class Client:
                         self.gui.set_leaderboard(lb)
                 except:
                         #socket.timeout:
-                    print 'timed out, no more responses'
+                    logging.error('Time out exceeded, no more responses')
                     break
         finally:
             logging.debug('Shutting socket down')
