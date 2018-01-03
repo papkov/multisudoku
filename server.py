@@ -2,7 +2,9 @@ from threading import Thread, Lock, currentThread
 from socket import AF_INET, SOCK_STREAM, socket, SOCK_DGRAM, SOL_SOCKET, SO_BROADCAST
 from socket import IPPROTO_IP, IP_MULTICAST_TTL
 from socket import error as soc_err
+from socket import gethostname, gethostbyname
 import struct
+import time
 
 from protocol import *
 from sudoku import *
@@ -27,6 +29,7 @@ class Game:
         self.__players = []
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
+        self.__br_port = None
 
         # broadcast sender socket
         self.sender_sock = socket(AF_INET, SOCK_DGRAM)
@@ -35,10 +38,13 @@ class Game:
         # ttl = struct.pack('b', 1)
         # self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
 
+    def set_broadcast_port(self,port):
+        self.__br_port = port
+
     def send_to_all(self, name, message):
         logging.debug("Broadcast notification: %s - %s" % (name, message))
         if message != 'EXIT':
-            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_BROADCAST_ADDR, DEFAULT_SERVER_PORT))
+            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_BROADCAST_ADDR, self.__br_port))
         else:
             self.sender_sock.close()
 
@@ -279,6 +285,14 @@ class GameServer:
         self.server_sock = sock_addr
         self.server = None
 
+        # broadcast sender socket
+        self.sender_sock = socket(AF_INET, SOCK_DGRAM)
+        self.sender_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+
+        self.__port = self.server_sock.split(':')[1]
+        self.__game.set_broadcast_port(self.__port)
+
+
     def listen(self):
         # Create XML_server
         self.server = SimpleXMLRPCServer(self.server_sock, requestHandler=MyServerRequestHandler)
@@ -297,6 +311,13 @@ class GameServer:
     #     self.__s.listen(self.__backlog)
     #     LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
 
+    def sender_loop(self):
+        hostname = gethostname()
+        message = gethostbyname(hostname) + MSG_FIELD_SEP + self.__port
+        while True:
+            self.sender_sock.sendto(message, (DEFAULT_BROADCAST_ADDR, DEFAULT_SERVER_PORT))
+            LOG.debug(message)
+            time.sleep(0.5)
 
     def loop(self):
         # LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
@@ -318,6 +339,10 @@ class GameServer:
         #         client_socket.close()
         #     self.__s.close()
         # map(lambda x: x.join(), clients)
+        sender_thread = Thread(name='ReceiverThread', target=self.sender_loop)
+        sender_thread.start()
+        sender_thread.join()
+
         try:
             self.server.serve_forever()
         except KeyboardInterrupt:
