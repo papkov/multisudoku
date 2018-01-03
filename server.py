@@ -1,5 +1,5 @@
 from threading import Thread, Lock, currentThread
-from socket import AF_INET, SOCK_STREAM, socket, SOCK_DGRAM
+from socket import AF_INET, SOCK_STREAM, socket, SOCK_DGRAM, SOL_SOCKET, SO_BROADCAST
 from socket import IPPROTO_IP, IP_MULTICAST_TTL
 from socket import error as soc_err
 import struct
@@ -30,13 +30,15 @@ class Game:
 
         # broadcast sender socket
         self.sender_sock = socket(AF_INET, SOCK_DGRAM)
-        ttl = struct.pack('b', 1)
-        self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
+        self.sender_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+
+        # ttl = struct.pack('b', 1)
+        # self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
 
     def send_to_all(self, name, message):
         logging.debug("Broadcast notification: %s - %s" % (name, message))
         if message != 'EXIT':
-            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_SERVER_INET_ADDR, DEFAULT_SERVER_PORT))
+            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_BROADCAST_ADDR, DEFAULT_SERVER_PORT))
         else:
             self.sender_sock.close()
 
