@@ -3,6 +3,7 @@ from threading import Thread, Condition, Lock
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
 from socket import inet_aton, IP_ADD_MEMBERSHIP,SOL_SOCKET, SO_REUSEADDR, SO_BROADCAST, SOCK_DGRAM, IPPROTO_IP
 from socket import error as soc_err
+import select
 
 from protocol import *
 from syncIO import *
@@ -61,7 +62,9 @@ class Client:
         # membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
         # self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
         self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.receiver_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
         self.receiver_sock.bind(("", DEFAULT_SERVER_PORT))
+        self.receiver_sock.setblocking(0)
 
     def set_gui(self, gui):
         self.gui = gui
@@ -421,7 +424,11 @@ class Client:
             while True:
                 try:
                     #logging.debug("Entered")
-                    data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    ready = select.select([self.receiver_sock], [], [], 2)
+                    if ready[0]:
+                        data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    else:
+                        continue
                     #message = data.split()
                     #logging.info('Received message type: %s', type(data))
                     #logging.info('Received message: %s', data)
@@ -434,10 +441,9 @@ class Client:
                     if state and self.gui is not None:
                         self.gui.set_sudoku(state)
                         self.gui.set_leaderboard(lb)
-                except:
-                        #socket.timeout:
-                    logging.error('Time out exceeded, no more responses')
-                    break
+                except IOError as e:
+                    logging.error('Receiver loop error: %s' % e)
+                    continue
         finally:
             logging.debug('Shutting socket down')
             self.receiver_sock.shutdown(2)
