@@ -61,7 +61,7 @@ class Client:
         # membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
         # self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
         self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        self.receiver_sock.bind((bind_addr, DEFAULT_SERVER_PORT))
+        self.receiver_sock.bind(("", DEFAULT_SERVER_PORT))
 
     def set_gui(self, gui):
         self.gui = gui
