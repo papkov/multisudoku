@@ -274,11 +274,12 @@ class PlayerSession(Thread):
 
 
 class GameServer:
-    def __init__(self, game,sock_addr):
+    def __init__(self, game, sock_addr):
         self.__clients = []
         self.__game = game
-
         self.server_sock = sock_addr
+
+    def listen(self):
         # Create XML_server
         self.server = SimpleXMLRPCServer(self.server_sock, requestHandler=MyServerRequestHandler)
         LOG.debug('Server started')
@@ -286,37 +287,37 @@ class GameServer:
         # Register all functions
         # Register server-side functions into RPC middleware
         self.server.register_instance(game)
-        #self.server.register_function(function_name)
+        # self.server.register_function(function_name)
 
-    def listen(self, sock_addr, backlog=1):
-        self.__sock_addr = sock_addr
-        self.__backlog = backlog
-        self.__s = socket(AF_INET, SOCK_STREAM)
-        self.__s.bind(self.__sock_addr)
-        self.__s.listen(self.__backlog)
-        LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
+    # def listen(self, sock_addr, backlog=1):
+    #     self.__sock_addr = sock_addr
+    #     self.__backlog = backlog
+    #     self.__s = socket(AF_INET, SOCK_STREAM)
+    #     self.__s.bind(self.__sock_addr)
+    #     self.__s.listen(self.__backlog)
+    #     LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
 
 
     def loop(self):
-        '''LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
-        clients = []
-        client_socket = None
-
-        try:
-            while True:
-                client_socket = None
-                LOG.info('Awaiting new clients ...')
-                client_socket, client_addr = self.__s.accept()
-                c = PlayerSession(client_socket, client_addr, self.__game)
-                clients.append(c)
-                c.start()
-        except KeyboardInterrupt:
-            LOG.warn('Ctrl+C issued closing server ...')
-        finally:
-            if client_socket is not None:
-                client_socket.close()
-            self.__s.close()
-        map(lambda x: x.join(), clients)'''
+        # LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
+        # clients = []
+        # client_socket = None
+        #
+        # try:
+        #     while True:
+        #         client_socket = None
+        #         LOG.info('Awaiting new clients ...')
+        #         client_socket, client_addr = self.__s.accept()
+        #         c = PlayerSession(client_socket, client_addr, self.__game)
+        #         clients.append(c)
+        #         c.start()
+        # except KeyboardInterrupt:
+        #     LOG.warn('Ctrl+C issued closing server ...')
+        # finally:
+        #     if client_socket is not None:
+        #         client_socket.close()
+        #     self.__s.close()
+        # map(lambda x: x.join(), clients)
         try:
             self.server.serve_forever()
         except KeyboardInterrupt:

@@ -451,8 +451,8 @@ class MenuFrame(tk.Frame):
 
         LOG.debug("Hosting a server: %s:%s" % (ip, port))
         #self.server.listen((ip, int(port)))
+        self.server.listen()
         self.thread_server = threading.Thread(target=self.server.loop, name="server")
-
         LOG.debug("Starting a server thread")
         self.thread_server.daemon = True
         self.thread_server.start()
