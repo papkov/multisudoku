@@ -1,7 +1,7 @@
 from tempfile import mktemp
 from threading import Thread, Condition, Lock
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
-from socket import inet_aton, IP_ADD_MEMBERSHIP,SOL_SOCKET, SO_BROADCAST, SOCK_DGRAM, IPPROTO_IP
+from socket import inet_aton, IP_ADD_MEMBERSHIP,SOL_SOCKET, SO_REUSEADDR, SO_BROADCAST, SOCK_DGRAM, IPPROTO_IP
 from socket import error as soc_err
 
 from protocol import *
@@ -60,12 +60,8 @@ class Client:
         self.receiver_sock = socket(AF_INET, SOCK_DGRAM)
         # membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
         # self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
-        # self.receiver_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-        try:
-            self.receiver_sock.bind((bind_addr, DEFAULT_SERVER_PORT))
-        except:
-            logging.error("You can't run two clients on the same machine")
-            exit(1)
+        self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.receiver_sock.bind((bind_addr, DEFAULT_SERVER_PORT))
 
     def set_gui(self, gui):
         self.gui = gui
