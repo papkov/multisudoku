@@ -327,7 +327,7 @@ class GameServer:
                                                                       self.port))
         while True:
             self.sender_sock.sendto(message, (DEFAULT_BROADCAST_ADDR, DEFAULT_BROADCAST_IP_PORT))
-            time.sleep(2)
+            time.sleep(0.5)
 
     def loop(self):
         LOG.info('Falling to serving loop, press Ctrl+C to terminate...')
