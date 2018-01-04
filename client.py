@@ -1,10 +1,14 @@
 from tempfile import mktemp
 from threading import Thread, Condition, Lock
 from socket import AF_INET, SOCK_STREAM, socket, SHUT_RD
+from socket import inet_aton, IP_ADD_MEMBERSHIP,SOL_SOCKET, SO_REUSEADDR, SO_BROADCAST, SOCK_DGRAM, IPPROTO_IP
 from socket import error as soc_err
+import select
 
 from protocol import *
 from syncIO import *
+
+from xmlrpclib import ServerProxy
 
 import logging
 logfile = mktemp()
@@ -47,8 +51,36 @@ class Client:
         self.__my_name = None
         self.__current_progress = []
 
+        # RPC proxy
+        self.__proxy = None
+
+        # List of currently available servers
+        self.available_servers = []
+
         # GUI to control
         self.gui = None
+
+        # IP and port of current game server
+        self.ip = None
+        self.port = None
+
+        # Current game status
+        self.in_game = False
+
+        # Broadcast IP receiver socket
+        self.receiver_sock = socket(AF_INET, SOCK_DGRAM)
+        # membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
+        # self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
+        self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.receiver_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+        self.receiver_sock.bind(("", DEFAULT_BROADCAST_IP_PORT))
+        self.receiver_sock.setblocking(0)
+
+        # Notification receiver socket
+        self.notification_sock = socket(AF_INET, SOCK_DGRAM)
+        self.notification_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.notification_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+        self.notification_sock.setblocking(0)
 
     def set_gui(self, gui):
         self.gui = gui
@@ -68,75 +100,67 @@ class Client:
         Setup player name before we can join the game
         """
 
-        payload = serialize(name)
+        #payload = serialize(name)
         logging.debug('Requesting the server to set player\'s name to %s ...' % name)
-        rsp = self.__sync_request(REQ_GM_SET_NAME, payload)
+        #rsp = self.__sync_request(REQ_GM_SET_NAME, payload)
+        with self.__send_lock:
+            rsp = self.__proxy.check_name(name)
         if rsp is not None:
-            head, payload = rsp
-            if head == RSP_GM_SET_NAME:
-                if payload[0] == '1':
-                    logging.debug('Server confirmed player\'s name')
-                    self.__my_name = name
-                    self.notify('You joined the game!')
-                    return True
-                else:
-                    logging.debug('Server rejected player\'s name')
-                    self.notify('Please select different name.')
-                    return False
+            if rsp:
+                logging.debug('Server confirmed player\'s name')
+                self.__my_name = name
+                self.notify('You joined the game!')
+                return True
             else:
-                logging.warn('Protocol error, unexpected control code!')
-                logging.warn('Expected [%s] received [%s]' % (RSP_GM_SET_NAME, head))
+                logging.debug('Server rejected player\'s name')
+                self.notify('Please select different name.')
+                return False
 
     def set_new_sudoku_to_guess(self, complexity):
         """
         Propose the new word to guess
         """
 
-        payload = serialize(complexity)
+        #payload = serialize(complexity)
         logging.debug('Requesting the server to the new sudoku to guess with complexity %s ...' % complexity)
-        rsp = self.__sync_request(REQ_GM_SET_SUDOKU, payload)
+        #rsp = self.__sync_request(REQ_GM_SET_SUDOKU, payload)
+        with self.__send_lock:
+            rsp = self.__proxy.set_new_sudoku(self.__my_name, complexity)
         if rsp is not None:
-            head, payload = rsp
-            if head == RSP_GM_SET_SUDOKU:
-                if payload[0] == '1':
-                    logging.debug('Server confirmed complexity settings: %s' % complexity)
-                    self.notify('Let others guess')
-                    return True
-                else:
-                    logging.debug('Server rejected player\'s complexity %s' % complexity)
-                    self.notify('Someone was faster in setting complexity!')
-                    return False
+            if rsp:
+                logging.debug('Server confirmed complexity settings: %s' % complexity)
+                self.notify('Let others guess')
+                return True
             else:
-                logging.warn('Protocol error, unexpected control code!')
-                logging.warn('Expected [%s] received [%s]' % (RSP_GM_SET_SUDOKU, head))
+                logging.debug('Server rejected player\'s complexity %s' % complexity)
+                self.notify('Someone was faster in setting complexity!')
+                return False
+
 
     def guess_number(self, input_str):
         """
         Guess the number
         """
-
+        logging.debug("Guess number: incoming string %s" % input_str)
         num, pos1, pos2 = input_str.split(' ')
         num = int(num)
         pos1 = int(pos1)
         pos2 = int(pos2)
         pos = [pos1, pos2]
-        logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num,pos1,pos2))
-        payload = serialize((num,pos, self.__my_name))
-        rsp = self.__sync_request(REQ_GM_GUESS, payload)
+        logging.debug('Requesting the server to guess %i on [%i][%i] ...' % (num, pos1, pos2))
+        #payload = serialize((num,pos, self.__my_name))
+        #rsp = self.__sync_request(REQ_GM_GUESS, payload)
+        with self.__send_lock:
+            rsp = self.__proxy.guess_number(num,pos, self.__my_name)
         if rsp is not None:
-            head, payload = rsp
-            if head == RSP_GM_GUESS:
-                if payload[0] == '1':
-                    logging.debug('Server confirmed %i on [%i][%i]' % (num, pos[0], pos[1]))
-                    return True
-                else:
-                    logging.debug('Server rejected %i on [%i][%i]' % (num, pos[0], pos[1]))
-                    self.notify('Wrong number %i on [%i][%i]' % (num, pos[0], pos[1]))
-                    self.get_current_progress()
-                    return False
+            if rsp:
+                logging.debug('Server confirmed %i on [%i][%i]' % (num, pos[0], pos[1]))
+                return True
             else:
-                logging.warn('Protocol error, unexpected control code!')
-                logging.warn('Expected [%s] received [%s]' % (RSP_GM_GUESS,head))
+                logging.debug('Server rejected %i on [%i][%i]' % (num, pos[0], pos[1]))
+                self.notify('Wrong number %i on [%i][%i]' % (num, pos[0], pos[1]))
+                self.get_current_progress()
+                return False
 
     def get_current_progress(self):
         """
@@ -144,25 +168,26 @@ class Client:
         """
 
         logging.debug('Requesting the current state ...')
-        rsp = self.__sync_request(REQ_GM_GET_STATE)
+        #rsp = self.__sync_request(REQ_GM_GET_STATE)
+        uncovered_sudoku, leaderboard = None, None
+        with self.__send_lock:
+            rsp = self.__proxy.get_current_state()
         if rsp is not None:
-            head, payload = rsp
-            if head == RSP_GM_STATE:
-                uncovered_sudoku, leaderboard = deserialize(payload)
-                self.__current_progress = uncovered_sudoku
-                if len(uncovered_sudoku) > 0:
-                    logging.debug('Current uncovered sudoku [%s] received' %
-                                  [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
-                    self.notify('Current progress: [%s]' %
-                                          [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
-                    self.notify('Current leaderboard: [%s]' % str(leaderboard))
-                    self.__state_change(self.__gm_states.NEED_NUMBER)
-                else:
-                    if self.__gm_state != self.__gm_states.NEED_SUDOKU:
-                        self.__state_change(self.__gm_states.NEED_SUDOKU)
+            #head, payload = rsp
+            #if head == RSP_GM_STATE:
+            #    uncovered_sudoku, leaderboard = deserialize(payload)
+            uncovered_sudoku, leaderboard = rsp
+            self.__current_progress = uncovered_sudoku
+            if len(uncovered_sudoku) > 0:
+                logging.debug('Current uncovered sudoku [%s] received' %
+                              [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
+                self.notify('Current progress: [%s]' %
+                                      [' '.join([str(c) for c in lst]) for lst in uncovered_sudoku])
+                self.notify('Current leaderboard: [%s]' % str(leaderboard))
+                self.__state_change(self.__gm_states.NEED_NUMBER)
             else:
-                logging.warn('Protocol error, unexpected control code!')
-                logging.warn('Expected [%s] received [%s]' % (RSP_GM_STATE, head))
+                if self.__gm_state != self.__gm_states.NEED_SUDOKU:
+                    self.__state_change(self.__gm_states.NEED_SUDOKU)
         # Return 1D list
         return [item for sublist in self.__current_progress for item in sublist], leaderboard
 
@@ -195,6 +220,28 @@ class Client:
             logging.error('Can not connect to Game server at %s:%d %s ' % (srv_addr+(str(e),)))
             self.__io.output_sync('Can\'t connect to server!')
         return False
+
+    def connect_proxy(self, srv_addr):
+        """
+        Connect to proxy server, start game session
+        """
+        try:
+            self.__proxy = ServerProxy("http://%s:%d" % srv_addr)
+            self.__proxy.__allow_none = True
+            logging.info('Connected to Game server at %s:%d' % srv_addr)
+            self.__state_change(self.__gm_states.NEED_NAME)
+            methods = filter(lambda x: 'system.' not in x, self.__proxy.system.listMethods())
+            logging.debug('Remote methods are: [%s] ' % (', '.join(methods)))
+
+            self.in_game = True
+            return True
+        except KeyboardInterrupt:
+            logging.warn('Ctrl+C issued, terminating')
+            return False
+        except Exception as e:
+            logging.error('Communication error %s ' % str(e))
+            self.__io.output_sync('Can\'t connect to server!')
+            return False
 
     def __sync_request(self, header, payload=''):
         """
@@ -389,6 +436,63 @@ class Client:
         else:
             self.gui.notify(text)
 
+    def setup_notification_socket(self):
+        logging.info("Notification socket was bind to port %s" % (int(self.port) + 1, ))
+        self.notification_sock.bind(("", int(self.port) + 1))
+
+    def receiver_loop(self):
+        logging.info('Falling to receiver loop ...')
+        try:
+            while True:
+                try:
+                    #logging.debug("Entered")
+                    ready = select.select([self.notification_sock], [], [], 2)
+                    if ready[0]:
+                        data, addr = self.notification_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    else:
+                        continue
+                    #message = data.split()
+                    #logging.info('Received message type: %s', type(data))
+                    #logging.info('Received message: %s', data)
+                    #print('Received message: ', data)
+                    logging.debug("Received broadcast notification")
+                    self.notify('Server Notification: %s' % data)
+                    state, lb = self.get_current_progress()
+
+                    # If GUI mode, update sudoku board
+                    if state and self.gui is not None:
+                        self.gui.set_sudoku(state)
+                        self.gui.set_leaderboard(lb)
+                except IOError as e:
+                    logging.error('Receiver loop error: %s' % e)
+                    continue
+        finally:
+            logging.debug('Shutting socket down')
+            self.receiver_sock.shutdown(2)
+            self.receiver_sock.close()
+
+    def discovery_loop(self):
+        logging.info('Falling to discovery loop...')
+        try:
+            while True:
+                try:
+                    ready = select.select([self.receiver_sock], [], [], 2)
+                    if ready[0]:
+                        data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    else:
+                        continue
+
+                    if data not in self.available_servers:
+                        logging.debug("New server was discovered: %s" % data)
+                        self.available_servers.append(data)
+
+                except IOError as e:
+                    logging.error('Receiver loop error: %s' % e)
+                    continue
+        finally:
+            logging.debug('Shutting socket down')
+            self.receiver_sock.shutdown(2)
+            self.receiver_sock.close()
 
 if __name__ == '__main__':
     srv_addr = ('127.0.0.1', 7777)
@@ -399,14 +503,16 @@ if __name__ == '__main__':
     sync_io = SyncConsoleAppenderRawInputReader()
     client = Client(sync_io)
     logging.debug('Created client')
-    if client.connect(srv_addr):
+    #if client.connect(srv_addr):
+    if client.connect_proxy(srv_addr):
 
-        network_thread = Thread(name='NetworkThread',
-                                target=client.network_loop)
-        notifications_thread = Thread(name='NotificationsThread',
-                                      target=client.notifications_loop)
-        network_thread.start()
-        notifications_thread.start()
+        #network_thread = Thread(name='NetworkThread',target=client.network_loop)
+        #notifications_thread = Thread(name='NotificationsThread',target=client.notifications_loop)
+        #network_thread.start()
+        #notifications_thread.start()
+        receiver_thread = Thread(name='ReceiverThread', target=client.receiver_loop)
+        receiver_thread.daemon = True  # Make this thread close with the main thread
+        receiver_thread.start()
 
         try:
             client.game_loop()
@@ -415,7 +521,8 @@ if __name__ == '__main__':
         finally:
             client.stop()
 
-        network_thread.join()
-        notifications_thread.join()
+        #network_thread.join()
+        #notifications_thread.join()
+        receiver_thread.join()
 
     logging.info('Terminating')

@@ -25,6 +25,15 @@ MSG_FIELD_SEP = ':'
 MSG_SEP = ';'
 
 DEFAULT_RCV_BUFSIZE = 1
+DEFAULT_RCV_BUFFSIZE = 1024
+
+# Broadcast parameters
+DEFAULT_BROADCAST_IP_PORT = 5007  # Port for primary ip broadcasting (auto-discovery)
+# bind_addr = '0.0.0.0'
+
+DEFAULT_BROADCAST_ADDR = "<broadcast>"  # Default broadcast address
+DEFAULT_HOSTING_ADDR = ""  # Server listens from all sources
+DEFAULT_HOSTING_PORT = 7777
 
 
 def serialize(msg):

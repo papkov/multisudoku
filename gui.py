@@ -1,11 +1,15 @@
 import Tkinter as tk
 import ttk
 import tkMessageBox
+# import tkSimpleDialog
 import logging
 import threading
 # from functools import partial
 import re
+import netifaces as ni
 # import sudoku as su
+
+from protocol import *
 
 FORMAT = '%(asctime)-15s (%(threadName)-2s) %(levelname)s %(message)s'
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -21,11 +25,11 @@ class SudokuFrame(tk.Frame):
 
         self.client = None
         self.lb = None
+        self.lock = threading.Lock()
 
         # Create trackers for sudoku boxes
         self.box_values = [tk.StringVar() for i in range(81)]
-        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in
-                            self.box_values]
+        self.box_tracers = []
         # Generate a list of boxes
         self.boxes = [tk.Entry(self,
                                width=3,
@@ -34,7 +38,7 @@ class SudokuFrame(tk.Frame):
                                textvariable=sv,
                                validate='key',
                                validatecommand=(self.register(self.validate_entry), '%P', '%s'),
-                               state='readonly') for sv in self.box_values]
+                               state=tk.DISABLED) for sv in self.box_values]
 
         # Fill the grid
         for i, b in enumerate(self.boxes):
@@ -69,7 +73,7 @@ class SudokuFrame(tk.Frame):
         :param prior_value: str, prior value of box
         :return: boolean, is new value allowed?
         """
-        allowed = (len(value) == 1 and value.isalnum()) or not value
+        allowed = (len(value) == 1 and value.isdigit()) or not value
         # Debug only new values
         if value != prior_value:
             LOG.debug("Validate %s: %s" % (value, allowed))
@@ -83,28 +87,29 @@ class SudokuFrame(tk.Frame):
         :param sv: StringVar, changed variable
         :return: current state of sudoku
         """
-        v = sv.get()
-        i = self.box_values.index(sv)
-        r = i // 9
-        c = i % 9
-        LOG.debug("Value %s has changed: %s" % (sv, v))
+        with self.lock:
+            v = sv.get()
+            i = self.box_values.index(sv)
+            r = i // 9
+            c = i % 9
+            LOG.debug("Value %s has changed: %s" % (sv, v))
 
-        if self.client is None:
-            logging.error("Client is not connected to SudokuFrame")
+            if self.client is None:
+                logging.error("Client is not connected to SudokuFrame")
+                return self.get_current_state()
+
+            if self.client.guess_number("%s %s %s" % (v, r, c)):
+                logging.debug("Number confirmed")
+                self.boxes[i].config(state="readonly")
+            else:
+                logging.debug("Number rejected")
+                # TODO: do we need to clear this field immediately?
+                sv.set("")
+
+            state, lb = self.client.get_current_progress()
+
+            self.lb.fill(lb)
             return self.get_current_state()
-
-        if self.client.guess_number("%s %s %s" % (v, r, c)):
-            logging.debug("Number confirmed")
-            self.boxes[i].config(state="readonly")
-        else:
-            logging.debug("Number rejected")
-            # TODO: do we need to clear this field immediately?
-            sv.set("")
-
-        state, lb = self.client.get_current_progress()
-
-        self.lb.fill(lb)
-        return self.get_current_state()
 
     def get_current_state(self):
         """
@@ -145,22 +150,25 @@ class SudokuFrame(tk.Frame):
         """
         LOG.debug("Got unsolved sudoku with %d elements" % len(sudoku))
 
-        # Remove tracers for updating
-        for i, sv in enumerate(self.box_values):
-            sv.trace_vdelete("w", self.box_tracers[i])
+        with self.lock:
+            # Remove tracers for updating
+            if self.box_tracers:
+                for i, sv in enumerate(self.box_values):
+                    # print self.box_tracers[i]
+                    sv.trace_vdelete("w", self.box_tracers[i])
 
-        for i, b in enumerate(self.boxes):
-            # Fix values that are not zero
-            b.config(state="normal")
-            # b.delete(0, 'end')
-            if sudoku[i]:
-                self.box_values[i].set(sudoku[i])
-                # b.insert(0, sudoku[i])
-                b.config(state="readonly")
+            for i, b in enumerate(self.boxes):
+                # Fix values that are not zero
+                b.config(state=tk.NORMAL)
+                # b.delete(0, 'end')
+                if sudoku[i]:
+                    self.box_values[i].set(sudoku[i])
+                    # b.insert(0, sudoku[i])
+                    b.config(state=tk.DISABLED)
 
-        # Track changes in sudoku
-        self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
-        # tkMessageBox.showinfo("Info", "New sudoku was generated")
+            # Track changes in sudoku
+            self.box_tracers = [sv.trace("w", lambda name, index, mode, sv=sv: self.report_changes(sv)) for sv in self.box_values]
+            # tkMessageBox.showinfo("Info", "New sudoku was generated")
 
 
 class LeaderboardFrame(tk.Frame):
@@ -270,8 +278,11 @@ class MenuFrame(tk.Frame):
     """
     Class for total control
     """
-    def __init__(self, parent, frm_sudoku, width=25, address="127.0.0.1:7777"):
+    def __init__(self, parent, frm_sudoku, root, width=25, address="127.0.0.1:7777"):
         tk.Frame.__init__(self, parent)
+
+        # Main pane
+        self.root = root
 
         # Control
         self.server = None
@@ -280,9 +291,11 @@ class MenuFrame(tk.Frame):
         self.thread_server = None
         self.thread_client_notifications = None
         self.thread_client_network = None
+        self.thread_receiver = None
+        self.thread_discovery = None
 
         self.title = tk.Label(self,
-                              text="Multiplayer sudoku\nv0.0.1",
+                              text="Multiplayer sudoku\nv0.0.2",
                               font="Helvetica 16 bold")
         self.title.pack(side=tk.TOP)
 
@@ -294,6 +307,11 @@ class MenuFrame(tk.Frame):
         self.frm_sessions = SessionsFrame(self)
         self.frm_notifications = NotificationsFrame(self)
         self.frm_host = tk.Frame(self)      # Host/Join buttons
+
+        # DIALOG BOXES FOR HOST/JOIN
+        # Run by buttons
+        self.db_host = None
+        self.db_join = None
 
         # Set control to update
         self.frm_sudoku.set_leaderboard(self.frm_leaderboard)
@@ -333,8 +351,8 @@ class MenuFrame(tk.Frame):
                                     validate='key',
                                     validatecommand=(self.register(self.validate_address), '%P'))
         # Position
-        self.ent_address.pack(side=tk.RIGHT, fill=tk.X)
-        self.lbl_address.pack(side=tk.RIGHT, fill=tk.X)
+        # self.ent_address.pack(side=tk.RIGHT, fill=tk.X)
+        # self.lbl_address.pack(side=tk.RIGHT, fill=tk.X)
 
         # BUTTONS
         self.btn_new = tk.Button(self,
@@ -433,26 +451,38 @@ class MenuFrame(tk.Frame):
         Host a server on localhost
         :return: boolean, status
         """
+        # Call a dialog box
+        # port = tkSimpleDialog.askinteger("Port:", "Select hosting port",
+        #                                  parent=self.parent,
+        #                                  minvalue=1030, maxvalue=65535)
+
+        self.db_host = HostDialog(self.root, self.server)
+        self.root.wait_window(self.db_host.top)
+        logging.info("Hosting through local network %s:%s" % (self.server.ip, self.server.port))
+        # self.server.port = port
+        # self.server.ip = ip
+
         # TODO handle exceptions
         # Check if server was set up and not yet running
-        if not self.valid_address or self.server is None:
+        if self.server.port is None or self.server.ip is None:
             LOG.debug("Failed to host a server")
             return False
         if self.thread_server is not None:
             LOG.debug("Server is already running")
             return False
         # Address should be valid at this point
-        ip, port = self.ent_address.get().split(":")
+        # ip, port = self.ent_address.get().split(":")
 
-        LOG.debug("Hosting a server: %s:%s" % (ip, port))
-        self.server.listen((ip, int(port)))
+        self.server.listen()
         self.thread_server = threading.Thread(target=self.server.loop, name="server")
-
         LOG.debug("Starting a server thread")
         self.thread_server.daemon = True
         self.thread_server.start()
 
-        tkMessageBox.showinfo("Info", "Hosting a server: %s:%s\nAsk your friends to join!" % (ip, port))
+        # Set target port for broadcasting the near the proxy port
+        self.server.set_broadcast_port(self.server.port+1)
+
+        tkMessageBox.showinfo("Info", "Hosting a server: %s:%s\nAsk your friends to join!" % (self.server.ip, self.server.port))
         return True
 
     def join(self):
@@ -460,11 +490,23 @@ class MenuFrame(tk.Frame):
         Join a server by address provided through text field
         :return:
         """
-        if not self.valid_address or self.server is None:
+        # Start discovering servers
+
+        if self.thread_discovery is None:
+            self.thread_discovery = threading.Thread(name='DiscoveryThread', target=self.client.discovery_loop)
+            self.thread_discovery.daemon = True
+            self.thread_discovery.start()
+
+        # Call a dialog box
+        self.db_join = JoinDialog(self.root, self.client)
+        self.root.wait_window(self.db_join.top)
+
+        if self.client.ip is None or self.client.port is None:
             LOG.debug("Failed to join a server")
             return False
         # TODO: ability to restart client with different name
-        if self.thread_client_network is not None:
+
+        if self.thread_receiver is not None:
             LOG.debug("Client is already running")
             return False
         if not self.valid_username:
@@ -476,25 +518,29 @@ class MenuFrame(tk.Frame):
             return False
 
         # Address should be valid at this point
-        ip, port = self.ent_address.get().split(":")
-        server_address = (ip, int(port))
+        server_address = (self.client.ip, int(self.client.port))
+        logging.debug("Trying to connect to %s:%s" % server_address)
 
-        if self.client.connect(server_address):
-            logging.debug("Client connected to %s:%s" % (ip, port))
+        #if self.client.connect(server_address):
+        if self.client.connect_proxy(server_address):
+            logging.debug("Client connected to %s:%s" % server_address)
 
+            # Setup notification socket to receive broadcast notifications
+            self.client.setup_notification_socket()
             # Set and start client threads
-            self.thread_client_network = threading.Thread(name='client_network',
-                                                          target=self.client.network_loop)
-            self.thread_client_notifications = threading.Thread(name='client_notifications',
-                                                                target=self.client.notifications_loop)
-            self.thread_client_notifications.daemon = True
-            self.thread_client_network.daemon = True
-            self.thread_client_network.start()
-            self.thread_client_notifications.start()
+            self.thread_receiver = threading.Thread(name='ReceiverThread', target=self.client.receiver_loop)
+            self.thread_receiver.daemon = True
+            self.thread_receiver.start()
+            #self.thread_client_network = threading.Thread(name='client_network',target=self.client.network_loop)
+            #self.thread_client_notifications = threading.Thread(name='client_notifications',target=self.client.notifications_loop)
+            #self.thread_client_notifications.daemon = True
+            #self.thread_client_network.daemon = True
+            #self.thread_client_network.start()
+            #self.thread_client_notifications.start()
             logging.debug("Client threads are running")
 
         else:
-            LOG.debug("Failed to connect to server %s:%s" % (ip, port))
+            logging.debug("Failed to connect to server %s:%s" % (self.client.ip, self.client.port))
             return False
 
         # TODO handle name rejection (do we need that?)
@@ -521,9 +567,13 @@ class MenuFrame(tk.Frame):
         :param complexity:
         :return:
         """
+        if not self.client.in_game:
+            tkMessageBox.showerror("No connection!", "You need to join a server before requesting sudoku")
+            return
+
         if self.client.set_new_sudoku_to_guess(complexity):
             state, lb = self.client.get_current_progress()
-            logging.debug("Received new sudoku %s" % len(sud))
+            logging.debug("Received new sudoku %s" % len(state))
             self.frm_sudoku.set_sudoku(state)
             self.frm_leaderboard.fill(lb)
         else:
@@ -544,6 +594,110 @@ class MenuFrame(tk.Frame):
         :return: None
         """
         self.client = client
+
+
+class HostDialog:
+
+    def __init__(self, parent, server):
+
+        self.top = tk.Toplevel(parent)
+        # Control server parameters: IP and port
+        self.server = server
+
+        self.lbl_port = tk.Label(self.top, text="Enter port:")
+        self.lbl_ip = tk.Label(self.top, text="Select IP:")
+        self.ent_port = tk.Entry(self.top)
+        self.list_ip = tk.Listbox(self.top,
+                                  selectmode=tk.SINGLE,
+                                  width=70)
+        self.btn_save = tk.Button(self.top, text="Select", command=self.select)
+
+        # Set default port
+        self.ent_port.insert(0, DEFAULT_HOSTING_PORT)
+
+        # Get list of all ips for different interfaces
+        ips = ["%s  -  %s" % (iface, ni.ifaddresses(iface)[ni.AF_INET][0]["addr"])
+               for iface in ni.interfaces()
+               if ni.AF_INET in ni.ifaddresses(iface)]
+
+        for ip in ips:
+            self.list_ip.insert(tk.END, ip)
+
+        # Organise
+        self.lbl_ip.pack(side=tk.TOP)
+        self.list_ip.pack(side=tk.TOP)
+        self.lbl_port.pack(side=tk.TOP)
+        self.ent_port.pack(side=tk.TOP)
+        self.btn_save.pack(side=tk.TOP)
+
+    def select(self):
+        if not self.valid_port():
+            logging.error("Invalid port")
+            return
+
+        try:
+            port = int(self.ent_port.get())
+            ip = self.list_ip.get(tk.ACTIVE).split(" - ")[1].strip()
+
+            if port < 1029 or port > 65536:
+                tkMessageBox.showerror("Wrong port!",
+                                       "Enter port number between 1029 and 65536")
+                return
+        except:
+            logging.error("Something went wrong during IP selection")
+            return
+
+        self.server.ip = ip
+        self.server.port = port
+
+        logging.debug("Selected IP %s port %s" % (ip, port))
+        self.top.destroy()
+
+    def valid_port(self):
+        """
+        Validation for port
+        :param value: str, new value of box
+        :param prior_value: str, prior value of box
+        :return: boolean, is new value allowed?
+        """
+        allowed = self.ent_port.get().isdigit() or not self.ent_port.get()
+        return allowed
+
+
+class JoinDialog:
+    def __init__(self, parent, client):
+
+        self.top = tk.Toplevel(parent)
+        # Control client parameters: IP and port
+        self.client = client
+
+        self.lbl_ip = tk.Label(self.top, text="Select server:")
+        self.list_ip = tk.Listbox(self.top,
+                                  selectmode=tk.SINGLE,
+                                  width=30)
+        self.btn_save = tk.Button(self.top, text="Select", command=self.select)
+
+        for ip in self.client.available_servers:
+            self.list_ip.insert(tk.END, ip)
+
+        # Organise
+        self.lbl_ip.pack(side=tk.TOP)
+        self.list_ip.pack(side=tk.TOP)
+        self.btn_save.pack(side=tk.TOP)
+
+    def select(self):
+
+        try:
+            ip, port = self.list_ip.get(tk.ACTIVE).split(":")
+        except:
+            logging.error("Something went wrong during IP selection")
+            return
+
+        self.client.ip = ip
+        self.client.port = int(port)
+
+        logging.debug("Selected IP %s port %s" % (ip, port))
+        self.top.destroy()
 
 
 class MainWindow(tk.Tk):
@@ -568,7 +722,7 @@ class MainWindow(tk.Tk):
         self.frm_sudoku.pack(side=tk.TOP)
 
         # Create menu frame and bound it with sudoku
-        self.frm_menu = MenuFrame(self.pn_main, self.frm_sudoku)
+        self.frm_menu = MenuFrame(self.pn_main, self.frm_sudoku, self)
 
         # Add panes to main pane
         self.pn_main.add(self.frm_menu)

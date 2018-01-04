@@ -1,14 +1,25 @@
 from threading import Thread, Lock, currentThread
-from socket import AF_INET, SOCK_STREAM, socket
+from socket import AF_INET, SOCK_STREAM, socket, SOCK_DGRAM, SOL_SOCKET, SO_BROADCAST
+from socket import IPPROTO_IP, IP_MULTICAST_TTL
 from socket import error as soc_err
+from socket import gethostname, gethostbyname
+import struct
+import time
 
 from protocol import *
 from sudoku import *
 
+from SimpleXMLRPCServer import SimpleXMLRPCServer
+from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
+
 import logging
+
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s (%(threadName)-2s) %(message)s')
 LOG = logging.getLogger()
+
+class MyServerRequestHandler(SimpleXMLRPCRequestHandler):
+    rpc_paths = ('/RPC2',)
 
 
 class Game:
@@ -18,12 +29,46 @@ class Game:
         self.__players = []
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
+        self.__br_port = None
 
-    def __notify_update(self, message):
-        caller = currentThread().getName()
-        joined = filter(lambda x: x.is_joined(), self.__players)
-        map(lambda x: x.notify('%s %s' % (caller, message)), joined)
+        # broadcast sender socket
+        self.sender_sock = socket(AF_INET, SOCK_DGRAM)
+        self.sender_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
 
+        # ttl = struct.pack('b', 1)
+        # self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
+
+    def set_broadcast_port(self, port):
+        logging.info("Broadcast notifications will be sent to port %s" % port)
+        self.__br_port = port
+
+    def send_to_all(self, name, message):
+        logging.debug("Broadcast notification: %s - %s" % (name, message))
+        if message != 'EXIT':
+            self.sender_sock.sendto(name + ' ' + message, (DEFAULT_BROADCAST_ADDR, self.__br_port))
+        else:
+            self.sender_sock.close()
+
+    def check_name(self, name):
+        # Function for RPC
+        # (copy from self.join, added PlayerSession)
+        #players = map(lambda x: x.getName(), self.__players)
+        if name in self.__players:
+            return False
+        # ??? do we need PlayerSession?
+        #client_session = PlayerSession(name,self)
+        self.__players.append(name)
+        self.send_to_all(name, 'joined the game!')
+        self.__scores[name] = 0
+        #self.__notify_update('joined game!')
+        return True
+
+    #def __notify_update(self, message):
+    #    caller = currentThread().getName()
+    #    joined = filter(lambda x: x.is_joined(), self.__players)
+    #    map(lambda x: x.notify('%s %s' % (caller, message)), joined)
+
+    #can delete
     def remove_me(self):
         caller = currentThread()
         if caller in self.__players:
@@ -31,6 +76,7 @@ class Game:
             logging.info('%s left game' % caller.getName())
             self.__notify_update('left game')
 
+    #can delete
     def join(self, name, client_session):
         players = map(lambda x: x.getName(),self.__players)
         if name in players:
@@ -39,30 +85,29 @@ class Game:
         self.__notify_update('joined game!')
         return True
 
-    def set_new_sudoku(self, complexity):
+    def set_new_sudoku(self, name, complexity):
+        # Function for RPC
         r = False
         with self.__gm_lock:
             if len(self.__sudoku_to_guess) <= 0:
                 sudoku = get_sudoku(int(complexity))
                 self.__sudoku_to_guess = sudoku["s"]
                 self.__sudoku_uncovered = sudoku["u"]
-                self.__notify_update('did set new sudoku to guess!')
+                self.send_to_all(name, 'did set new sudoku to guess!')
                 r = True
         return r
 
     def __reset(self):
-        # self.__to_guess = ''
-        # self.__uncovered = ''
-        # self.__ok_letters = []
         self.__sudoku_to_guess = []
         self.__sudoku_uncovered = []
 
     def guess_number(self, num, pos,name):
+        # Function for RPC
         with self.__gm_lock:
             r = False
             if num == self.__sudoku_to_guess[pos[0]][pos[1]]:
                 self.__sudoku_uncovered[pos[0]][pos[1]] = num
-                self.__notify_update('did guess %i in position [%i][%i]!' % (num,pos[0],pos[1]))
+                self.send_to_all(name, 'did guess %i in position [%i][%i]!' % (num,pos[0],pos[1]))
                 r = True
                 self.__scores[name] = self.__scores[name] + 1
                 logging.debug(self.__scores)
@@ -72,14 +117,16 @@ class Game:
             if self.__sudoku_uncovered == self.__sudoku_to_guess:
                 # sud = self.__sudoku_to_guess
                 self.__reset()
-                self.__notify_update('did solve the sudoku')
+                self.send_to_all(name, 'did solve the sudoku')
         return r
 
     def set_name(self, name):
         self.__scores[name] = 0
 
     def get_current_state(self):
-        """Returns unsolved sudoku and leaderboard"""
+        """
+        Returns unsolved sudoku and leaderboard
+        """
         with self.__gm_lock:
             # s = self.__uncovered
             s = self.__sudoku_uncovered
@@ -87,14 +134,15 @@ class Game:
         return s, l
 
 
+#can delete
 class PlayerSession(Thread):
-    def __init__(self, soc, soc_addr, game):
+    def __init__(self, game, name):
         Thread.__init__(self)
-        self.__s = soc
-        self.__addr = soc_addr
+        #self.__s = soc
+        #self.__addr = soc_addr
         self.__send_lock = Lock()
         self.__game = game
-        self.__name = None
+        self.__name = name
 
     def getName(self):
         return self.__name
@@ -235,40 +283,91 @@ class GameServer:
     def __init__(self, game):
         self.__clients = []
         self.__game = game
+        self.server_sock = None
+        self.server = None
 
-    def listen(self, sock_addr, backlog=1):
-        self.__sock_addr = sock_addr
-        self.__backlog = backlog
-        self.__s = socket(AF_INET, SOCK_STREAM)
-        self.__s.bind(self.__sock_addr)
-        self.__s.listen(self.__backlog)
-        LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
+        # broadcast sender socket
+        self.sender_sock = socket(AF_INET, SOCK_DGRAM)
+        self.sender_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+
+        self.port = None
+        self.ip = None
+
+    def set_broadcast_port(self, port):
+        self.__game.set_broadcast_port(port)
+
+    def listen(self):
+        # Create XML server
+        if not self.port:
+            logging.error("Serving port was not specified")
+            return
+
+        self.server_sock = (DEFAULT_HOSTING_ADDR, self.port)
+        self.server = SimpleXMLRPCServer(self.server_sock, requestHandler=MyServerRequestHandler)
+        LOG.debug('Server started listening RPC on %s:%s' % self.server_sock)
+        self.server.register_introspection_functions()
+        # Register all functions
+        # Register server-side functions into RPC middleware
+        self.server.register_instance(self.__game)
+        # self.server.register_function(function_name)
+
+    # def listen(self, sock_addr, backlog=1):
+    #     self.__sock_addr = sock_addr
+    #     self.__backlog = backlog
+    #     self.__s = socket(AF_INET, SOCK_STREAM)
+    #     self.__s.bind(self.__sock_addr)
+    #     self.__s.listen(self.__backlog)
+    #     LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
+
+    def broadcast_ip_loop(self):
+        message = self.ip + MSG_FIELD_SEP + str(self.port)
+        logging.debug("Broadcasting to %s:%s server address %s:%s" % (DEFAULT_BROADCAST_ADDR,
+                                                                      DEFAULT_BROADCAST_IP_PORT,
+                                                                      self.ip,
+                                                                      self.port))
+        while True:
+            self.sender_sock.sendto(message, (DEFAULT_BROADCAST_ADDR, DEFAULT_BROADCAST_IP_PORT))
+            time.sleep(0.5)
 
     def loop(self):
-        LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
-        clients = []
-        client_socket = None
+        LOG.info('Falling to serving loop, press Ctrl+C to terminate...')
+        # clients = []
+        # client_socket = None
+        #
+        # try:
+        #     while True:
+        #         client_socket = None
+        #         LOG.info('Awaiting new clients ...')
+        #         client_socket, client_addr = self.__s.accept()
+        #         c = PlayerSession(client_socket, client_addr, self.__game)
+        #         clients.append(c)
+        #         c.start()
+        # except KeyboardInterrupt:
+        #     LOG.warn('Ctrl+C issued closing server ...')
+        # finally:
+        #     if client_socket is not None:
+        #         client_socket.close()
+        #     self.__s.close()
+        # map(lambda x: x.join(), clients)
+
+        # Start broadcasting my IP for automatic discovery
+        broadcast_ip_thread = Thread(name='BroadcastIPThread', target=self.broadcast_ip_loop)
+        broadcast_ip_thread.daemon = True  # Make this thread close with the main thread
+        broadcast_ip_thread.start()
 
         try:
-            while True:
-                client_socket = None
-                LOG.info('Awaiting new clients ...')
-                client_socket, client_addr = self.__s.accept()
-                c = PlayerSession(client_socket, client_addr, self.__game)
-                clients.append(c)
-                c.start()
+            self.server.serve_forever()
         except KeyboardInterrupt:
-            LOG.warn('Ctrl+C issued closing server ...')
+            print 'Ctrl+C issued, terminating ...'
         finally:
-            if client_socket is not None:
-                client_socket.close()
-            self.__s.close()
-        map(lambda x: x.join(), clients)
+            self.server.shutdown()  # Stop the serve-forever loop
+            self.server.server_close()  # Close the sockets
+        print 'Terminating ...'
+
 
 
 if __name__ == '__main__':
     game = Game()
-    server = GameServer(game)
-    server.listen(('127.0.0.1', 7777))
+    server = GameServer(game, ('', 7777))
     server.loop()
     LOG.info('Terminating...')
