@@ -38,7 +38,8 @@ class Game:
         # ttl = struct.pack('b', 1)
         # self.sender_sock.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl)
 
-    def set_broadcast_port(self,port):
+    def set_broadcast_port(self, port):
+        logging.info("Broadcast notifications will be sent to port %s" % port)
         self.__br_port = port
 
     def send_to_all(self, name, message):
@@ -279,24 +280,31 @@ class PlayerSession(Thread):
 
 
 class GameServer:
-    def __init__(self, game, sock_addr):
+    def __init__(self, game):
         self.__clients = []
         self.__game = game
-        self.server_sock = sock_addr
+        self.server_sock = None
         self.server = None
 
         # broadcast sender socket
         self.sender_sock = socket(AF_INET, SOCK_DGRAM)
         self.sender_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
 
-        self.__port = self.server_sock.split(':')[1]
-        self.__game.set_broadcast_port(self.__port)
+        self.port = None
+        self.ip = None
 
+    def set_broadcast_port(self, port):
+        self.__game.set_broadcast_port(port)
 
     def listen(self):
-        # Create XML_server
+        # Create XML server
+        if not self.port:
+            logging.error("Serving port was not specified")
+            return
+
+        self.server_sock = (DEFAULT_HOSTING_ADDR, self.port)
         self.server = SimpleXMLRPCServer(self.server_sock, requestHandler=MyServerRequestHandler)
-        LOG.debug('Server started')
+        LOG.debug('Server started listening RPC on %s:%s' % self.server_sock)
         self.server.register_introspection_functions()
         # Register all functions
         # Register server-side functions into RPC middleware
@@ -311,16 +319,18 @@ class GameServer:
     #     self.__s.listen(self.__backlog)
     #     LOG.debug('Socket %s:%d is in listening state' % self.__s.getsockname() )
 
-    def sender_loop(self):
-        hostname = gethostname()
-        message = gethostbyname(hostname) + MSG_FIELD_SEP + self.__port
+    def broadcast_ip_loop(self):
+        message = self.ip + MSG_FIELD_SEP + str(self.port)
+        logging.debug("Broadcasting to %s:%s server address %s:%s" % (DEFAULT_BROADCAST_ADDR,
+                                                                      DEFAULT_BROADCAST_IP_PORT,
+                                                                      self.ip,
+                                                                      self.port))
         while True:
-            self.sender_sock.sendto(message, (DEFAULT_BROADCAST_ADDR, DEFAULT_SERVER_PORT))
-            LOG.debug(message)
-            time.sleep(0.5)
+            self.sender_sock.sendto(message, (DEFAULT_BROADCAST_ADDR, DEFAULT_BROADCAST_IP_PORT))
+            time.sleep(2)
 
     def loop(self):
-        # LOG.info('Falling to serving loop, press Ctrl+C to terminate ...' )
+        LOG.info('Falling to serving loop, press Ctrl+C to terminate...')
         # clients = []
         # client_socket = None
         #
@@ -339,9 +349,11 @@ class GameServer:
         #         client_socket.close()
         #     self.__s.close()
         # map(lambda x: x.join(), clients)
-        sender_thread = Thread(name='ReceiverThread', target=self.sender_loop)
-        sender_thread.start()
-        sender_thread.join()
+
+        # Start broadcasting my IP for automatic discovery
+        broadcast_ip_thread = Thread(name='BroadcastIPThread', target=self.broadcast_ip_loop)
+        broadcast_ip_thread.daemon = True  # Make this thread close with the main thread
+        broadcast_ip_thread.start()
 
         try:
             self.server.serve_forever()
@@ -353,9 +365,9 @@ class GameServer:
         print 'Terminating ...'
 
 
+
 if __name__ == '__main__':
     game = Game()
-    server = GameServer(game,('127.0.0.1', 7777))
-    #server.listen(('127.0.0.1', 7777))
+    server = GameServer(game, ('', 7777))
     server.loop()
     LOG.info('Terminating...')

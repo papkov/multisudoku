@@ -54,17 +54,33 @@ class Client:
         # RPC proxy
         self.__proxy = None
 
+        # List of currently available servers
+        self.available_servers = []
+
         # GUI to control
         self.gui = None
 
-        # broadcast receiver socket
+        # IP and port of current game server
+        self.ip = None
+        self.port = None
+
+        # Current game status
+        self.in_game = False
+
+        # Broadcast IP receiver socket
         self.receiver_sock = socket(AF_INET, SOCK_DGRAM)
         # membership = inet_aton(DEFAULT_SERVER_INET_ADDR) + inet_aton(bind_addr)
         # self.receiver_sock.setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, membership)
         self.receiver_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.receiver_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-        self.receiver_sock.bind(("", DEFAULT_SERVER_PORT))
+        self.receiver_sock.bind(("", DEFAULT_BROADCAST_IP_PORT))
         self.receiver_sock.setblocking(0)
+
+        # Notification receiver socket
+        self.notification_sock = socket(AF_INET, SOCK_DGRAM)
+        self.notification_sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+        self.notification_sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+        self.notification_sock.setblocking(0)
 
     def set_gui(self, gui):
         self.gui = gui
@@ -216,6 +232,8 @@ class Client:
             self.__state_change(self.__gm_states.NEED_NAME)
             methods = filter(lambda x: 'system.' not in x, self.__proxy.system.listMethods())
             logging.debug('Remote methods are: [%s] ' % (', '.join(methods)))
+
+            self.in_game = True
             return True
         except KeyboardInterrupt:
             logging.warn('Ctrl+C issued, terminating')
@@ -418,15 +436,19 @@ class Client:
         else:
             self.gui.notify(text)
 
+    def setup_notification_socket(self):
+        logging.info("Notification socket was bind to port %s" % (int(self.port) + 1, ))
+        self.notification_sock.bind(("", int(self.port) + 1))
+
     def receiver_loop(self):
         logging.info('Falling to receiver loop ...')
         try:
             while True:
                 try:
                     #logging.debug("Entered")
-                    ready = select.select([self.receiver_sock], [], [], 2)
+                    ready = select.select([self.notification_sock], [], [], 2)
                     if ready[0]:
-                        data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                        data, addr = self.notification_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
                     else:
                         continue
                     #message = data.split()
@@ -449,7 +471,28 @@ class Client:
             self.receiver_sock.shutdown(2)
             self.receiver_sock.close()
 
+    def discovery_loop(self):
+        logging.info('Falling to discovery loop...')
+        try:
+            while True:
+                try:
+                    ready = select.select([self.receiver_sock], [], [], 2)
+                    if ready[0]:
+                        data, addr = self.receiver_sock.recvfrom(DEFAULT_RCV_BUFFSIZE)
+                    else:
+                        continue
 
+                    if data not in self.available_servers:
+                        logging.debug("New server was discovered: %s" % data)
+                        self.available_servers.append(data)
+
+                except IOError as e:
+                    logging.error('Receiver loop error: %s' % e)
+                    continue
+        finally:
+            logging.debug('Shutting socket down')
+            self.receiver_sock.shutdown(2)
+            self.receiver_sock.close()
 
 if __name__ == '__main__':
     srv_addr = ('127.0.0.1', 7777)
@@ -467,7 +510,8 @@ if __name__ == '__main__':
         #notifications_thread = Thread(name='NotificationsThread',target=client.notifications_loop)
         #network_thread.start()
         #notifications_thread.start()
-        receiver_thread = Thread(name='ReceiverThread',target=client.receiver_loop)
+        receiver_thread = Thread(name='ReceiverThread', target=client.receiver_loop)
+        receiver_thread.daemon = True  # Make this thread close with the main thread
         receiver_thread.start()
 
         try:

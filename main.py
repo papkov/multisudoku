@@ -23,7 +23,7 @@ if __name__ == "__main__":
     game = s.Game()
 
     # Pre-set server with game
-    server = s.GameServer(game, ('', 7777))
+    server = s.GameServer(game)
 
     # Create client
     # TODO: remove syncIO dependency for GUI
