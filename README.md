@@ -16,9 +16,9 @@ University of Tartu. Distributed systems course. Fall 2017
 1. [Setup](#setup)
 2. [Architecture](#arch)
 3. [How to play?](#howto)
-  * [Host the server](#host)
-  * [Join the server](#join)
-  * [Guess the number](#guess)
+    * [Host the server](#host)
+    * [Join the server](#join)
+    * [Guess the number](#guess)
 
 ## Setup user manual <a name="setup"/>
 
